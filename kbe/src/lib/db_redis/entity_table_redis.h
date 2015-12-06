@@ -30,24 +30,21 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 namespace KBEngine { 
 
 class ScriptDefModule;
-class EntityTableMysql;
-
-#define MYSQL_ENGINE_TYPE "InnoDB"
+class EntityTableRedis;
 
 /*
 	维护entity在数据库表中的一个字段
 */
-class EntityTableItemMysqlBase : public EntityTableItem
+class EntityTableItemRedisBase : public EntityTableItem
 {
 public:
-	EntityTableItemMysqlBase(std::string itemDBType, uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItem(itemDBType, datalength, flags),
-	  mysqlItemtype_(mysqlItemtype)
+	EntityTableItemRedisBase(std::string itemDBType, uint32 datalength, uint32 flags):
+	  EntityTableItem(itemDBType, datalength, flags)
 	{
 		memset(db_item_name_, 0, MAX_BUF);
 	};
 
-	virtual ~EntityTableItemMysqlBase()
+	virtual ~EntityTableItemRedisBase()
 	{
 	};
 
@@ -62,28 +59,28 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL) = 0;
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL) = 0;
 
 	/**
 		更新数据
 	*/
-	virtual bool writeItem(DBInterface* dbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule){ return true; }
+	virtual bool writeItem(DBInterface* pdbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule){ return true; }
 
 	/**
 		查询表
 	*/
-	virtual bool queryTable(DBInterface* dbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule){ return true; }
+	virtual bool queryTable(DBInterface* pdbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule){ return true; }
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	virtual void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID){};
+	virtual void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID){};
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context) = 0;
-	virtual void getReadSqlItem(DBContext& context) = 0;
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context) = 0;
+	virtual void getReadSqlItem(redis::DBContext& context) = 0;
 
 	virtual void init_db_item_name(const char* exstrFlag = "");
 	const char* db_item_name(){ return db_item_name_; }
@@ -91,172 +88,171 @@ public:
 	virtual bool isSameKey(std::string key){ return key == db_item_name(); }
 protected:
 	char db_item_name_[MAX_BUF];
-	enum_field_types mysqlItemtype_;
 };
 
-class EntityTableItemMysql_DIGIT : public EntityTableItemMysqlBase
+class EntityTableItemRedis_DIGIT : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_DIGIT(std::string dataSType, std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype),
+	EntityTableItemRedis_DIGIT(std::string dataSType, std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags),
 		  dataSType_(dataSType)
 	{
 	};
 
-	virtual ~EntityTableItemMysql_DIGIT(){};
+	virtual ~EntityTableItemRedis_DIGIT(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_DIGIT; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 protected:
 	std::string dataSType_;
 };
 
-class EntityTableItemMysql_STRING : public EntityTableItemMysqlBase
+class EntityTableItemRedis_STRING : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_STRING(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_STRING(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_STRING(){};
+	virtual ~EntityTableItemRedis_STRING(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_STRING; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 };
 
-class EntityTableItemMysql_UNICODE : public EntityTableItemMysqlBase
+class EntityTableItemRedis_UNICODE : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_UNICODE(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_UNICODE(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_UNICODE(){};
+	virtual ~EntityTableItemRedis_UNICODE(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_UNICODE; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 };
 
-class EntityTableItemMysql_PYTHON : public EntityTableItemMysqlBase
+class EntityTableItemRedis_PYTHON : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_PYTHON(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_PYTHON(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_PYTHON(){};
+	virtual ~EntityTableItemRedis_PYTHON(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_PYTHON; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 };
 
-class EntityTableItemMysql_BLOB : public EntityTableItemMysqlBase
+class EntityTableItemRedis_BLOB : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_BLOB(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_BLOB(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_BLOB(){};
+	virtual ~EntityTableItemRedis_BLOB(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_BLOB; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 };
 
-class EntityTableItemMysql_VECTOR2 : public EntityTableItemMysqlBase
+class EntityTableItemRedis_VECTOR2 : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_VECTOR2(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_VECTOR2(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_VECTOR2(){};
+	virtual ~EntityTableItemRedis_VECTOR2(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_VECTOR2; }
 	
@@ -265,18 +261,18 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	virtual void init_db_item_name(const char* exstrFlag = "")
 	{
@@ -288,16 +284,16 @@ protected:
 	char db_item_names_[2][MAX_BUF];
 };
 
-class EntityTableItemMysql_VECTOR3 : public EntityTableItemMysqlBase
+class EntityTableItemRedis_VECTOR3 : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_VECTOR3(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_VECTOR3(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_VECTOR3(){};
+	virtual ~EntityTableItemRedis_VECTOR3(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_VECTOR3; }
 
@@ -306,18 +302,18 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	virtual void init_db_item_name(const char* exstrFlag = "")
 	{
@@ -329,16 +325,16 @@ protected:
 	char db_item_names_[3][MAX_BUF];
 };
 
-class EntityTableItemMysql_VECTOR4 : public EntityTableItemMysqlBase
+class EntityTableItemRedis_VECTOR4 : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_VECTOR4(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_VECTOR4(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_VECTOR4(){};
+	virtual ~EntityTableItemRedis_VECTOR4(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_VECTOR4; }
 
@@ -347,18 +343,18 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	virtual void init_db_item_name(const char* exstrFlag = "")
 	{
@@ -370,47 +366,47 @@ protected:
 	char db_item_names_[4][MAX_BUF];
 };
 
-class EntityTableItemMysql_MAILBOX : public EntityTableItemMysqlBase
+class EntityTableItemRedis_MAILBOX : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_MAILBOX(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_MAILBOX(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_MAILBOX(){};
+	virtual ~EntityTableItemRedis_MAILBOX(){};
 
 	uint8 type() const{ return TABLE_ITEM_TYPE_MAILBOX; }
 
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 };
 
-class EntityTableItemMysql_ARRAY : public EntityTableItemMysqlBase
+class EntityTableItemRedis_ARRAY : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_ARRAY(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype),
+	EntityTableItemRedis_ARRAY(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags),
 	  pChildTable_(NULL)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_ARRAY(){};
+	virtual ~EntityTableItemRedis_ARRAY(){};
 
 	virtual bool isSameKey(std::string key);
 
@@ -425,18 +421,18 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	virtual void init_db_item_name(const char* exstrFlag = "");
 
@@ -444,16 +440,16 @@ protected:
 	EntityTable* pChildTable_;
 };
 
-class EntityTableItemMysql_FIXED_DICT : public EntityTableItemMysqlBase
+class EntityTableItemRedis_FIXED_DICT : public EntityTableItemRedisBase
 {
 public:
-	EntityTableItemMysql_FIXED_DICT(std::string itemDBType, 
-		uint32 datalength, uint32 flags, enum_field_types mysqlItemtype):
-	  EntityTableItemMysqlBase(itemDBType, datalength, flags, mysqlItemtype)
+	EntityTableItemRedis_FIXED_DICT(std::string itemDBType, 
+		uint32 datalength, uint32 flags):
+	  EntityTableItemRedisBase(itemDBType, datalength, flags)
 	  {
 	  }
 
-	virtual ~EntityTableItemMysql_FIXED_DICT(){};
+	virtual ~EntityTableItemRedis_FIXED_DICT(){};
 
 	typedef std::vector< std::pair< std::string, KBEShared_ptr<EntityTableItem> > > FIXEDDICT_KEYTYPES;
 
@@ -470,33 +466,34 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi, void* pData = NULL);
+	virtual bool syncToDB(DBInterface* pdbi, void* pData = NULL);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	virtual void init_db_item_name(const char* exstrFlag = "");
+
 protected:
-	EntityTableItemMysql_FIXED_DICT::FIXEDDICT_KEYTYPES			keyTypes_;		// 这个固定字典里的各个key的类型
+	EntityTableItemRedis_FIXED_DICT::FIXEDDICT_KEYTYPES			keyTypes_;		// 这个固定字典里的各个key的类型
 };
 
 
 /*
 	维护entity在数据库中的表
 */
-class EntityTableMysql : public EntityTable
+class EntityTableRedis : public EntityTable
 {
 public:
-	EntityTableMysql();
-	virtual ~EntityTableMysql();
+	EntityTableRedis(EntityTables* pEntityTables);
+	virtual ~EntityTableRedis();
 	
 	/**
 		初始化
@@ -506,51 +503,51 @@ public:
 	/**
 		同步entity表到数据库中
 	*/
-	virtual bool syncToDB(DBInterface* dbi);
+	virtual bool syncToDB(DBInterface* pdbi);
 
 	/**
 		同步表索引
 	*/
-	virtual bool syncIndexToDB(DBInterface* dbi);
+	virtual bool syncIndexToDB(DBInterface* pdbi);
 
 	/** 
 		创建一个表item
 	*/
 	virtual EntityTableItem* createItem(std::string type);
 
-	DBID writeTable(DBInterface* dbi, DBID dbid, int8 shouldAutoLoad, MemoryStream* s, ScriptDefModule* pModule);
+	DBID writeTable(DBInterface* pdbi, DBID dbid, int8 shouldAutoLoad, MemoryStream* s, ScriptDefModule* pModule);
 
 	/**
 		从数据库删除entity
 	*/
-	bool removeEntity(DBInterface* dbi, DBID dbid, ScriptDefModule* pModule);
+	bool removeEntity(DBInterface* pdbi, DBID dbid, ScriptDefModule* pModule);
 
 	/**
 		获取所有的数据放到流中
 	*/
-	virtual bool queryTable(DBInterface* dbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule);
+	virtual bool queryTable(DBInterface* pdbi, DBID dbid, MemoryStream* s, ScriptDefModule* pModule);
 
 	/**
 		设置是否自动加载
 	*/
-	virtual void entityShouldAutoLoad(DBInterface* dbi, DBID dbid, bool shouldAutoLoad);
+	virtual void entityShouldAutoLoad(DBInterface* pdbi, DBID dbid, bool shouldAutoLoad);
 
 	/**
 		查询自动加载的实体
 	*/
-	virtual void queryAutoLoadEntities(DBInterface* dbi, ScriptDefModule* pModule, 
+	virtual void queryAutoLoadEntities(DBInterface* pdbi, ScriptDefModule* pModule, 
 		ENTITY_ID start, ENTITY_ID end, std::vector<DBID>& outs);
 
 	/**
 		获取某个表所有的数据放到流中
 	*/
-	void addToStream(MemoryStream* s, DBContext& context, DBID resultDBID);
+	void addToStream(MemoryStream* s, redis::DBContext& context, DBID resultDBID);
 
 	/**
 		获取需要存储的表名， 字段名和转换为sql存储时的字符串值
 	*/
-	virtual void getWriteSqlItem(DBInterface* dbi, MemoryStream* s, DBContext& context);
-	virtual void getReadSqlItem(DBContext& context);
+	virtual void getWriteSqlItem(DBInterface* pdbi, MemoryStream* s, redis::DBContext& context);
+	virtual void getReadSqlItem(redis::DBContext& context);
 
 	void init_db_item_name();
 

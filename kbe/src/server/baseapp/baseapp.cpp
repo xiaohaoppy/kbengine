@@ -22,7 +22,6 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "baseapp.h"
 #include "proxy.h"
 #include "base.h"
-#include "py_file_descriptor.h"
 #include "baseapp_interface.h"
 #include "base_remotemethod.h"
 #include "archiver.h"
@@ -40,6 +39,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "network/encryption_filter.h"
 #include "server/components.h"
 #include "server/telnet_server.h"
+#include "server/py_file_descriptor.h"
 #include "server/sendmail_threadtasks.h"
 #include "math/math.h"
 #include "entitydef/blob.h"
@@ -140,7 +140,8 @@ Baseapp::Baseapp(Network::EventDispatcher& dispatcher,
 	pTelnetServer_(NULL),
 	pRestoreEntityHandlers_(),
 	pResmgrTimerHandle_(),
-	pInitProgressHandler_(NULL)
+	pInitProgressHandler_(NULL),
+	flags_(APP_FLAGS_NONE)
 {
 	KBEngine::Network::MessageHandlers::pMainMessageHandlers = &BaseappInterface::messageHandlers;
 
@@ -289,7 +290,18 @@ bool Baseapp::installPyModules()
 	registerScript(Base::getScriptType());
 	registerScript(Proxy::getScriptType());
 
-	// 注册创建entity的方法到py
+	// 将app标记注册到脚本
+	std::map<uint32, std::string> flagsmaps = createAppFlagsMaps();
+	std::map<uint32, std::string>::iterator fiter = flagsmaps.begin();
+	for (; fiter != flagsmaps.end(); ++fiter)
+	{
+		if (PyModule_AddIntConstant(getScript().getModule(), fiter->second.c_str(), fiter->first))
+		{
+			ERROR_MSG(fmt::format("Baseapp::onInstallPyModules: Unable to set KBEngine.{}.\n", fiter->second));
+		}
+	}
+
+	// 注册创建entity的方法到py 
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		time,							__py_gametime,												METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		createBase,						__py_createBase,											METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		createBaseLocally,				__py_createBase,											METH_VARARGS,			0);
@@ -300,15 +312,18 @@ bool Baseapp::installPyModules()
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		executeRawDatabaseCommand,		__py_executeRawDatabaseCommand,								METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		quantumPassedPercent,			__py_quantumPassedPercent,									METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		charge,							__py_charge,												METH_VARARGS,			0);
-	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		registerReadFileDescriptor,		PyFileDescriptor::__py_registerReadFileDescriptor,				METH_VARARGS,			0);
+	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		registerReadFileDescriptor,		PyFileDescriptor::__py_registerReadFileDescriptor,			METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		registerWriteFileDescriptor,	PyFileDescriptor::__py_registerWriteFileDescriptor,			METH_VARARGS,			0);
-	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		deregisterFileDescriptor,		PyFileDescriptor::__py_deregisterReadFileDescriptor,			METH_VARARGS,			0);
+	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		deregisterReadFileDescriptor,	PyFileDescriptor::__py_deregisterReadFileDescriptor,		METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		deregisterWriteFileDescriptor,	PyFileDescriptor::__py_deregisterWriteFileDescriptor,		METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		reloadScript,					__py_reloadScript,											METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		isShuttingDown,					__py_isShuttingDown,										METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		address,						__py_address,												METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		deleteBaseByDBID,				__py_deleteBaseByDBID,										METH_VARARGS,			0);
 	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(),		lookUpBaseByDBID,				__py_lookUpBaseByDBID,										METH_VARARGS,			0);
+	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		setAppFlags,					__py_setFlags,												METH_VARARGS,			0);
+	APPEND_SCRIPT_MODULE_METHOD(getScript().getModule(), 		getAppFlags,					__py_getFlags,												METH_VARARGS,			0);
+		
 	return EntityApp<Base>::installPyModules();
 }
 
@@ -376,8 +391,8 @@ void Baseapp::onUpdateLoad()
 	{
 		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
 		(*pBundle).newMessage(BaseappmgrInterface::updateBaseapp);
-		BaseappmgrInterface::updateBaseappArgs4::staticAddToBundle((*pBundle), 
-			componentID_, pEntities_->getEntities().size() - numProxices(), numProxices(), getLoad());
+		BaseappmgrInterface::updateBaseappArgs5::staticAddToBundle((*pBundle), 
+			componentID_, pEntities_->getEntities().size() - numProxices(), numProxices(), getLoad(), flags_);
 
 		pChannel->send(pBundle);
 	}
@@ -815,15 +830,26 @@ PyObject* Baseapp::__py_createBaseFromDBID(PyObject* self, PyObject* args)
 	int ret = -1;
 	DBID dbid;
 	PyObject* pyEntityType = NULL;
+	PyObject* pyDBInterfaceName = NULL;
+	std::string dbInterfaceName = "default";
 
 	switch(argCount)
 	{
+	case 4:
+		{
+			ret = PyArg_ParseTuple(args, "O|K|O|O", &pyEntityType, &dbid, &pyCallback, &pyDBInterfaceName);
+			break;
+		}
 	case 3:
-		ret = PyArg_ParseTuple(args, "O|K|O", &pyEntityType, &dbid, &pyCallback);
-		break;
+		{
+			ret = PyArg_ParseTuple(args, "O|K|O", &pyEntityType, &dbid, &pyCallback);
+			break;
+		}
 	case 2:
-		ret = PyArg_ParseTuple(args, "O|K", &pyEntityType, &dbid);
-		break;
+		{
+			ret = PyArg_ParseTuple(args, "O|K", &pyEntityType, &dbid);
+			break;
+		}
 	default:
 		{
 			PyErr_Format(PyExc_AssertionError, "%s: args require 2 or 3 args, gived %d!\n",
@@ -832,6 +858,32 @@ PyObject* Baseapp::__py_createBaseFromDBID(PyObject* self, PyObject* args)
 			return NULL;
 		}
 	};
+
+	if (ret == -1)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::createBaseFromDBID: args is error!");
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
+	if (pyDBInterfaceName)
+	{
+		wchar_t* PyUnicode_AsWideCharStringRet0 = PyUnicode_AsWideCharString(pyDBInterfaceName, NULL);
+		char* ccattr = strutil::wchar2char(PyUnicode_AsWideCharStringRet0);
+		dbInterfaceName = ccattr;
+		PyMem_Free(PyUnicode_AsWideCharStringRet0);
+		free(ccattr);
+
+		int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+		if (dbInterfaceIndex < 0)
+		{
+			PyErr_Format(PyExc_TypeError, "Baseapp::createBaseFromDBID: not found dbInterface(%s)!",
+				dbInterfaceName.c_str());
+
+			PyErr_PrintEx(0);
+			return NULL;
+		}
+	}
 
 	if(pyEntityType)
 	{
@@ -886,19 +938,29 @@ PyObject* Baseapp::__py_createBaseFromDBID(PyObject* self, PyObject* args)
 		return NULL;
 	}
 
-	Baseapp::getSingleton().createBaseFromDBID(entityType, dbid, pyCallback);
+	Baseapp::getSingleton().createBaseFromDBID(entityType, dbid, pyCallback, dbInterfaceName);
 
 	free(entityType);
 	S_Return;
 }
 
 //-------------------------------------------------------------------------------------
-void Baseapp::createBaseFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback)
+void Baseapp::createBaseFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback, const std::string& dbInterfaceName)
 {
 	Components::ComponentInfos* dbmgrinfos = Components::getSingleton().getDbmgr();
 	if(dbmgrinfos == NULL || dbmgrinfos->pChannel == NULL || dbmgrinfos->cid == 0)
 	{
 		PyErr_Format(PyExc_AssertionError, "Baseapp::createBaseFromDBID: not found dbmgr!\n");
+		PyErr_PrintEx(0);
+		return;
+	}
+
+	int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+	if (dbInterfaceIndex < 0)
+	{
+		PyErr_Format(PyExc_TypeError, "Baseapp::createBaseFromDBID: not found dbInterface(%s)!", 
+			dbInterfaceName.c_str());
+
 		PyErr_PrintEx(0);
 		return;
 	}
@@ -915,8 +977,8 @@ void Baseapp::createBaseFromDBID(const char* entityType, DBID dbid, PyObject* py
 	ENTITY_ID entityID = idClient_.alloc();
 	KBE_ASSERT(entityID > 0);
 
-	DbmgrInterface::queryEntityArgs6::staticAddToBundle((*pBundle), 
-		g_componentID, 0, dbid, entityType, callbackID, entityID);
+	DbmgrInterface::queryEntityArgs7::staticAddToBundle((*pBundle), 
+		dbInterfaceIndex, g_componentID, 0, dbid, entityType, callbackID, entityID);
 	
 	dbmgrinfos->pChannel->send(pBundle);
 }
@@ -932,7 +994,9 @@ void Baseapp::onCreateBaseFromDBIDCallback(Network::Channel* pChannel, KBEngine:
 	ENTITY_ID entityID;
 	COMPONENT_ID wasActiveCID;
 	ENTITY_ID wasActiveEntityID;
+	uint16 dbInterfaceIndex;
 
+	s >> dbInterfaceIndex;
 	s >> entityType;
 	s >> dbid;
 	s >> callbackID;
@@ -1020,7 +1084,7 @@ void Baseapp::onCreateBaseFromDBIDCallback(Network::Channel* pChannel, KBEngine:
 	PyObject* e = Baseapp::getSingleton().createEntity(entityType.c_str(), pyDict, false, entityID);
 	if(e)
 	{
-		static_cast<Base*>(e)->dbid(dbid);
+		static_cast<Base*>(e)->dbid(dbInterfaceIndex, dbid);
 		static_cast<Base*>(e)->initializeEntity(pyDict);
 		Py_DECREF(pyDict);
 	}
@@ -1078,15 +1142,26 @@ PyObject* Baseapp::__py_createBaseAnywhereFromDBID(PyObject* self, PyObject* arg
 	int ret = -1;
 	DBID dbid;
 	PyObject* pyEntityType = NULL;
+	PyObject* pyDBInterfaceName = NULL;
+	std::string dbInterfaceName = "default";
 
 	switch(argCount)
 	{
+	case 4:
+	{
+		ret = PyArg_ParseTuple(args, "O|K|O|O", &pyEntityType, &dbid, &pyCallback, &pyDBInterfaceName);
+		break;
+	}
 	case 3:
-		ret = PyArg_ParseTuple(args, "O|K|O", &pyEntityType, &dbid, &pyCallback);
-		break;
+		{
+			ret = PyArg_ParseTuple(args, "O|K|O", &pyEntityType, &dbid, &pyCallback);
+			break;
+		}
 	case 2:
-		ret = PyArg_ParseTuple(args, "O|K", &pyEntityType, &dbid);
-		break;
+		{
+			ret = PyArg_ParseTuple(args, "O|K", &pyEntityType, &dbid);
+			break;
+		}
 	default:
 		{
 			PyErr_Format(PyExc_AssertionError, "%s: args require 2 or 3 args, gived %d!\n",
@@ -1095,6 +1170,32 @@ PyObject* Baseapp::__py_createBaseAnywhereFromDBID(PyObject* self, PyObject* arg
 			return NULL;
 		}
 	};
+
+	if (ret == -1)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::createBaseAnywhereFromDBID: args is error!");
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
+	if (pyDBInterfaceName)
+	{
+		wchar_t* PyUnicode_AsWideCharStringRet0 = PyUnicode_AsWideCharString(pyDBInterfaceName, NULL);
+		char* ccattr = strutil::wchar2char(PyUnicode_AsWideCharStringRet0);
+		dbInterfaceName = ccattr;
+		PyMem_Free(PyUnicode_AsWideCharStringRet0);
+		free(ccattr);
+
+		int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+		if (dbInterfaceIndex < 0)
+		{
+			PyErr_Format(PyExc_TypeError, "Baseapp::createBaseAnywhereFromDBID: not found dbInterface(%s)!",
+				dbInterfaceName.c_str());
+
+			PyErr_PrintEx(0);
+			return NULL;
+		}
+	}
 
 	if(pyEntityType)
 	{
@@ -1149,19 +1250,29 @@ PyObject* Baseapp::__py_createBaseAnywhereFromDBID(PyObject* self, PyObject* arg
 		return NULL;
 	}
 
-	Baseapp::getSingleton().createBaseAnywhereFromDBID(entityType, dbid, pyCallback);
+	Baseapp::getSingleton().createBaseAnywhereFromDBID(entityType, dbid, pyCallback, dbInterfaceName);
 
 	free(entityType);
 	S_Return;
 }
 
 //-------------------------------------------------------------------------------------
-void Baseapp::createBaseAnywhereFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback)
+void Baseapp::createBaseAnywhereFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback, const std::string& dbInterfaceName)
 {
 	Components::ComponentInfos* dbmgrinfos = Components::getSingleton().getDbmgr();
 	if(dbmgrinfos == NULL || dbmgrinfos->pChannel == NULL || dbmgrinfos->cid == 0)
 	{
 		PyErr_Format(PyExc_AssertionError, "Baseapp::createBaseAnywhereFromDBID: not found dbmgr!\n");
+		PyErr_PrintEx(0);
+		return;
+	}
+
+	int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+	if (dbInterfaceIndex < 0)
+	{
+		PyErr_Format(PyExc_TypeError, "Baseapp::createBaseAnywhereFromDBID: not found dbInterface(%s)!", 
+			dbInterfaceName.c_str());
+
 		PyErr_PrintEx(0);
 		return;
 	}
@@ -1178,8 +1289,8 @@ void Baseapp::createBaseAnywhereFromDBID(const char* entityType, DBID dbid, PyOb
 	ENTITY_ID entityID = idClient_.alloc();
 	KBE_ASSERT(entityID > 0);
 
-	DbmgrInterface::queryEntityArgs6::staticAddToBundle((*pBundle), 
-		g_componentID, 1, dbid, entityType, callbackID, entityID);
+	DbmgrInterface::queryEntityArgs7::staticAddToBundle((*pBundle), 
+		dbInterfaceIndex, g_componentID, 1, dbid, entityType, callbackID, entityID);
 	
 	dbmgrinfos->pChannel->send(pBundle);
 }
@@ -1197,7 +1308,9 @@ void Baseapp::onCreateBaseAnywhereFromDBIDCallback(Network::Channel* pChannel, K
 	ENTITY_ID entityID;
 	COMPONENT_ID wasActiveCID;
 	ENTITY_ID wasActiveEntityID;
+	uint16 dbInterfaceIndex;
 
+	s >> dbInterfaceIndex;
 	s >> entityType;
 	s >> dbid;
 	s >> callbackID;
@@ -1314,8 +1427,10 @@ void Baseapp::createBaseAnywhereFromDBIDOtherBaseapp(Network::Channel* pChannel,
 	bool wasActive = false;
 	ENTITY_ID entityID;
 	COMPONENT_ID sourceBaseappID;
+	uint16 dbInterfaceIndex;
 
 	s >> sourceBaseappID;
+	s >> dbInterfaceIndex;
 	s >> entityType;
 	s >> dbid;
 	s >> callbackID;
@@ -1327,7 +1442,7 @@ void Baseapp::createBaseAnywhereFromDBIDOtherBaseapp(Network::Channel* pChannel,
 	PyObject* e = Baseapp::getSingleton().createEntity(entityType.c_str(), pyDict, false, entityID);
 	if(e)
 	{
-		static_cast<Base*>(e)->dbid(dbid);
+		static_cast<Base*>(e)->dbid(dbInterfaceIndex, dbid);
 		static_cast<Base*>(e)->initializeEntity(pyDict);
 		Py_DECREF(pyDict);
 	}
@@ -1882,13 +1997,16 @@ PyObject* Baseapp::__py_executeRawDatabaseCommand(PyObject* self, PyObject* args
 {
 	int argCount = PyTuple_Size(args);
 	PyObject* pycallback = NULL;
+	PyObject* pyDBInterfaceName = NULL;
 	int ret = -1;
 	ENTITY_ID eid = -1;
 
 	char* data = NULL;
 	Py_ssize_t size;
 	
-	if(argCount == 3)
+	if (argCount == 4)
+		ret = PyArg_ParseTuple(args, "s#|O|i|O", &data, &size, &pycallback, &eid, &pyDBInterfaceName);
+	else if(argCount == 3)
 		ret = PyArg_ParseTuple(args, "s#|O|i", &data, &size, &pycallback, &eid);
 	else if(argCount == 2)
 		ret = PyArg_ParseTuple(args, "s#|O", &data, &size, &pycallback);
@@ -1899,14 +2017,34 @@ PyObject* Baseapp::__py_executeRawDatabaseCommand(PyObject* self, PyObject* args
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::executeRawDatabaseCommand: args is error!");
 		PyErr_PrintEx(0);
+		S_Return;
 	}
 	
-	Baseapp::getSingleton().executeRawDatabaseCommand(data, size, pycallback, eid);
+	std::string dbInterfaceName = "default";
+	if (pyDBInterfaceName)
+	{
+		wchar_t* PyUnicode_AsWideCharStringRet0 = PyUnicode_AsWideCharString(pyDBInterfaceName, NULL);
+		char* ccattr = strutil::wchar2char(PyUnicode_AsWideCharStringRet0);
+		dbInterfaceName = ccattr;
+		PyMem_Free(PyUnicode_AsWideCharStringRet0);
+		free(ccattr);
+		
+		if (!g_kbeSrvConfig.dbInterface(dbInterfaceName))
+		{
+			PyErr_Format(PyExc_TypeError, "KBEngine::executeRawDatabaseCommand: args4, incorrect dbInterfaceName(%s)!", 
+				dbInterfaceName.c_str());
+			
+			PyErr_PrintEx(0);
+			S_Return;
+		}
+	}
+
+	Baseapp::getSingleton().executeRawDatabaseCommand(data, size, pycallback, eid, dbInterfaceName);
 	S_Return;
 }
 
 //-------------------------------------------------------------------------------------
-void Baseapp::executeRawDatabaseCommand(const char* datas, uint32 size, PyObject* pycallback, ENTITY_ID eid)
+void Baseapp::executeRawDatabaseCommand(const char* datas, uint32 size, PyObject* pycallback, ENTITY_ID eid, const std::string& dbInterfaceName)
 {
 	if(datas == NULL)
 	{
@@ -1921,12 +2059,22 @@ void Baseapp::executeRawDatabaseCommand(const char* datas, uint32 size, PyObject
 		return;
 	}
 
+	int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+	if (dbInterfaceIndex < 0)
+	{
+		ERROR_MSG(fmt::format("KBEngine::executeRawDatabaseCommand: not found dbInterface({})!\n",
+			dbInterfaceName));
+
+		return;
+	}
+
 	//INFO_MSG(fmt::format("KBEngine::executeRawDatabaseCommand{}:{}.\n", 
 	//	(eid > 0 ? (fmt::format("(entityID={})", eid)) : ""), datas));
 
 	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
 	(*pBundle).newMessage(DbmgrInterface::executeRawDatabaseCommand);
 	(*pBundle) << eid;
+	(*pBundle) << (uint16)dbInterfaceIndex;
 	(*pBundle) << componentID_ << componentType_;
 
 	CALLBACK_ID callbackID = 0;
@@ -2668,8 +2816,9 @@ void Baseapp::onQueryAccountCBFromDbmgr(Network::Channel* pChannel, KBEngine::Me
 	ENTITY_ID entityID;
 	uint32 flags;
 	uint64 deadline;
+	uint16 dbInterfaceIndex;
 
-	s >> accountName >> password >> dbid >> success >> entityID >> flags >> deadline;
+	s >> dbInterfaceIndex >> accountName >> password >> dbid >> success >> entityID >> flags >> deadline;
 
 	PendingLoginMgr::PLInfos* ptinfos = pendingLoginMgr_.remove(accountName);
 	if(ptinfos == NULL)
@@ -2712,7 +2861,7 @@ void Baseapp::onQueryAccountCBFromDbmgr(Network::Channel* pChannel, KBEngine::Me
 	
 	KBE_ASSERT(base != NULL);
 	base->hasDB(true);
-	base->dbid(dbid);
+	base->dbid(dbInterfaceIndex, dbid);
 	base->setClientType(ptinfos->ctype);
 	base->setClientDatas(ptinfos->datas);
 
@@ -3086,7 +3235,7 @@ void Baseapp::onRemoteCallCellMethodFromClient(Network::Channel* pChannel, KBEng
 	if(e == NULL || e->cellMailbox() == NULL)
 	{
 		ERROR_MSG(fmt::format("Baseapp::onRemoteCallCellMethodFromClient: {} {} has no cell.\n",
-			e->scriptName(), srcEntityID));
+			(e == NULL ? "unknown" : e->scriptName()), srcEntityID));
 		
 		s.done();
 		return;
@@ -3155,7 +3304,7 @@ void Baseapp::onBackupEntityCellData(Network::Channel* pChannel, KBEngine::Memor
 
 	if(base)
 	{
-		INFO_MSG(fmt::format("Baseapp::onBackupEntityCellData: {}({}), size={}.\n",
+		INFO_MSG(fmt::format("Baseapp::onBackupEntityCellData: {}({}), {} bytes.\n",
 			base->scriptName(), baseID, s.length()));
 
 		base->onBackupCellData(pChannel, s);
@@ -3176,10 +3325,12 @@ void Baseapp::onCellWriteToDBCompleted(Network::Channel* pChannel, KBEngine::Mem
 	ENTITY_ID baseID = 0;
 	CALLBACK_ID callbackID = 0;
 	int8 shouldAutoLoad = -1;
+	int dbInterfaceIndex = -1;
 
 	s >> baseID;
 	s >> callbackID;
 	s >> shouldAutoLoad;
+	s >> dbInterfaceIndex;
 
 	Base* base = this->findEntity(baseID);
 
@@ -3189,7 +3340,7 @@ void Baseapp::onCellWriteToDBCompleted(Network::Channel* pChannel, KBEngine::Mem
 		INFO_MSG(fmt::format("Baseapp::onCellWriteToDBCompleted: {}({}).\n",
 			base->scriptName(), baseID));
 
-		base->onCellWriteToDBCompleted(callbackID, shouldAutoLoad);
+		base->onCellWriteToDBCompleted(callbackID, shouldAutoLoad, dbInterfaceIndex);
 	}
 	else
 	{
@@ -3200,7 +3351,7 @@ void Baseapp::onCellWriteToDBCompleted(Network::Channel* pChannel, KBEngine::Mem
 
 //-------------------------------------------------------------------------------------
 void Baseapp::onWriteToDBCallback(Network::Channel* pChannel, ENTITY_ID eid, 
-								  DBID entityDBID, CALLBACK_ID callbackID, bool success)
+	DBID entityDBID, uint16 dbInterfaceIndex, CALLBACK_ID callbackID, bool success)
 {
 	if(pChannel->isExternal())
 		return;
@@ -3212,7 +3363,7 @@ void Baseapp::onWriteToDBCallback(Network::Channel* pChannel, ENTITY_ID eid,
 		return;
 	}
 
-	base->onWriteToDBCallback(eid, entityDBID, callbackID, -1, success);
+	base->onWriteToDBCallback(eid, entityDBID, dbInterfaceIndex, callbackID, -1, success);
 }
 
 //-------------------------------------------------------------------------------------
@@ -3571,24 +3722,45 @@ PyObject* Baseapp::__py_address(PyObject* self, PyObject* args)
 //-------------------------------------------------------------------------------------
 PyObject* Baseapp::__py_deleteBaseByDBID(PyObject* self, PyObject* args)
 {
-	if(PyTuple_Size(args) != 3)
+	uint16 currargsSize = PyTuple_Size(args);
+	if (currargsSize < 3 || currargsSize > 4)
 	{
-		PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: args != (entityType, dbID, pycallback)!");
+		PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: args != (entityType, dbID, pycallback, dbInterfaceName)!");
 		PyErr_PrintEx(0);
 		return NULL;
 	}
 	
 	char* entityType = NULL;
 	PyObject* pycallback = NULL;
+	PyObject* pyDBInterfaceName = NULL;
 	DBID dbid;
+	std::string dbInterfaceName = "default";
 
-	if(PyArg_ParseTuple(args, "s|K|O", &entityType, &dbid, &pycallback) == -1)
+	if (currargsSize == 3)
 	{
-		PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: args is error!");
-		PyErr_PrintEx(0);
-		return NULL;
+		if (PyArg_ParseTuple(args, "s|K|O", &entityType, &dbid, &pycallback) == -1)
+		{
+			PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: args is error!");
+			PyErr_PrintEx(0);
+			return NULL;
+		}
 	}
-	
+	else if (currargsSize == 4)
+	{
+		if (PyArg_ParseTuple(args, "s|K|O|O", &entityType, &dbid, &pycallback, &pyDBInterfaceName) == -1)
+		{
+			PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: args is error!");
+			PyErr_PrintEx(0);
+			return NULL;
+		}
+
+		wchar_t* PyUnicode_AsWideCharStringRet0 = PyUnicode_AsWideCharString(pyDBInterfaceName, NULL);
+		char* ccattr = strutil::wchar2char(PyUnicode_AsWideCharStringRet0);
+		dbInterfaceName = ccattr;
+		PyMem_Free(PyUnicode_AsWideCharStringRet0);
+		free(ccattr);
+	}
+
 	ScriptDefModule* sm = EntityDef::findScriptModule(entityType);
 	if(sm == NULL)
 	{
@@ -3618,10 +3790,19 @@ PyObject* Baseapp::__py_deleteBaseByDBID(PyObject* self, PyObject* args)
 		return NULL;
 	}
 
+	int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+	if (dbInterfaceIndex < 0)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::deleteBaseByDBID: not found dbInterface(%s)!", dbInterfaceName.c_str());
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
 	CALLBACK_ID callbackID = Baseapp::getSingleton().callbackMgr().save(pycallback);
 
 	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
 	(*pBundle).newMessage(DbmgrInterface::deleteBaseByDBID);
+	(*pBundle) << (uint16)dbInterfaceIndex;
 	(*pBundle) << g_componentID;
 	(*pBundle) << dbid;
 	(*pBundle) << callbackID;
@@ -3704,9 +3885,10 @@ void Baseapp::deleteBaseByDBIDCB(Network::Channel* pChannel, KBEngine::MemoryStr
 //-------------------------------------------------------------------------------------
 PyObject* Baseapp::__py_lookUpBaseByDBID(PyObject* self, PyObject* args)
 {
-	if(PyTuple_Size(args) != 3)
+	uint16 currargsSize = PyTuple_Size(args);
+	if (currargsSize < 3 || currargsSize > 4)
 	{
-		PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: args != (entityType, dbID, pycallback)!");
+		PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: args != (entityType, dbID, pycallback, dbInterfaceName)!");
 		PyErr_PrintEx(0);
 		return NULL;
 	}
@@ -3714,14 +3896,39 @@ PyObject* Baseapp::__py_lookUpBaseByDBID(PyObject* self, PyObject* args)
 	char* entityType = NULL;
 	PyObject* pycallback = NULL;
 	DBID dbid;
+	std::string dbInterfaceName = "default";
 
-	if(PyArg_ParseTuple(args, "s|K|O", &entityType, &dbid, &pycallback) == -1)
+	if (currargsSize == 3)
 	{
-		PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: args is error!");
-		PyErr_PrintEx(0);
-		return NULL;
+		if (PyArg_ParseTuple(args, "s|K|O", &entityType, &dbid, &pycallback) == -1)
+		{
+			PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: args is error!");
+			PyErr_PrintEx(0);
+			return NULL;
+		}
 	}
-	
+	else if (currargsSize == 4)
+	{
+		PyObject* pyDBInterfaceName = NULL;
+
+		if (PyArg_ParseTuple(args, "s|K|O|O", &entityType, &dbid, &pycallback, &pyDBInterfaceName) == -1)
+		{
+			PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: args is error!");
+			PyErr_PrintEx(0);
+			return NULL;
+		}
+
+		wchar_t* PyUnicode_AsWideCharStringRet0 = PyUnicode_AsWideCharString(pyDBInterfaceName, NULL);
+		char* ccattr = strutil::wchar2char(PyUnicode_AsWideCharStringRet0);
+		dbInterfaceName = ccattr;
+		PyMem_Free(PyUnicode_AsWideCharStringRet0);
+		free(ccattr);
+	}
+	else
+	{
+		KBE_ASSERT(false);
+	}
+
 	ScriptDefModule* sm = EntityDef::findScriptModule(entityType);
 	if(sm == NULL)
 	{
@@ -3744,6 +3951,14 @@ PyObject* Baseapp::__py_lookUpBaseByDBID(PyObject* self, PyObject* args)
 		return NULL;
 	}
 	
+	int dbInterfaceIndex = g_kbeSrvConfig.dbInterfaceName2dbInterfaceIndex(dbInterfaceName);
+	if (dbInterfaceIndex < 0)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::lookUpBaseByDBID: not found dbInterface(%s)!", dbInterfaceName.c_str());
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
 	Components::ComponentInfos* dbmgrinfos = Components::getSingleton().getDbmgr();
 	if(dbmgrinfos == NULL || dbmgrinfos->pChannel == NULL || dbmgrinfos->cid == 0)
 	{
@@ -3755,6 +3970,7 @@ PyObject* Baseapp::__py_lookUpBaseByDBID(PyObject* self, PyObject* args)
 
 	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
 	(*pBundle).newMessage(DbmgrInterface::lookUpBaseByDBID);
+	(*pBundle) << (uint16)dbInterfaceIndex;
 	(*pBundle) << g_componentID;
 	(*pBundle) << dbid;
 	(*pBundle) << callbackID;
@@ -4033,6 +4249,35 @@ void Baseapp::onScriptVersionNotMatch(Network::Channel* pChannel)
 	pBundle->newMessage(ClientInterface::onScriptVersionNotMatch);
 	(*pBundle) << KBEVersion::scriptVersionString();
 	pChannel->send(pBundle);
+}
+
+//-------------------------------------------------------------------------------------
+PyObject* Baseapp::__py_getFlags(PyObject* self, PyObject* args)
+{
+	return PyLong_FromUnsignedLong(Baseapp::getSingleton().flags());
+}
+
+//-------------------------------------------------------------------------------------
+PyObject* Baseapp::__py_setFlags(PyObject* self, PyObject* args)
+{
+	if(PyTuple_Size(args) != 1)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::setFlags: argsSize != 1!");
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
+	uint32 flags;
+
+	if(PyArg_ParseTuple(args, "I", &flags) == -1)
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::setFlags: args is error!");
+		PyErr_PrintEx(0);
+		return NULL;
+	}
+
+	Baseapp::getSingleton().flags(flags);
+	S_Return;
 }
 
 //-------------------------------------------------------------------------------------

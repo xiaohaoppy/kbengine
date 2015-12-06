@@ -166,7 +166,7 @@ public:
 	/** 
 		从db获取信息创建一个entity
 	*/
-	void createBaseFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback);
+	void createBaseFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback, const std::string& dbInterfaceName);
 
 	/** 网络接口
 		createBaseFromDBID的回调。
@@ -176,7 +176,7 @@ public:
 	/** 
 		从db获取信息创建一个entity
 	*/
-	void createBaseAnywhereFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback);
+	void createBaseAnywhereFromDBID(const char* entityType, DBID dbid, PyObject* pyCallback, const std::string& dbInterfaceName);
 
 	/** 网络接口
 		createBaseFromDBID的回调。
@@ -223,7 +223,7 @@ public:
 		向dbmgr请求执行一个数据库命令
 	*/
 	static PyObject* __py_executeRawDatabaseCommand(PyObject* self, PyObject* args);
-	void executeRawDatabaseCommand(const char* datas, uint32 size, PyObject* pycallback, ENTITY_ID eid);
+	void executeRawDatabaseCommand(const char* datas, uint32 size, PyObject* pycallback, ENTITY_ID eid, const std::string& dbInterfaceName);
 	void onExecuteRawDatabaseCommandCB(Network::Channel* pChannel, KBEngine::MemoryStream& s);
 
 	/** 网络接口
@@ -329,7 +329,8 @@ public:
 	/** 网络接口
 		写entity到db回调
 	*/
-	void onWriteToDBCallback(Network::Channel* pChannel, ENTITY_ID eid, DBID entityDBID, CALLBACK_ID callbackID, bool success);
+	void onWriteToDBCallback(Network::Channel* pChannel, ENTITY_ID eid, DBID entityDBID, 
+		uint16 dbInterfaceIndex, CALLBACK_ID callbackID, bool success);
 
 	/**
 		增加proxices计数
@@ -461,10 +462,16 @@ public:
 	void onReqAccountNewPasswordCB(Network::Channel* pChannel, ENTITY_ID entityID, std::string& accountName,
 		SERVER_ERROR_CODE failedcode);
 
+	uint32 flags() const { return flags_; }
+	void flags(uint32 v) { flags_ = v; }
+	static PyObject* __py_setFlags(PyObject* self, PyObject* args);
+	static PyObject* __py_getFlags(PyObject* self, PyObject* args);
+	
 protected:
 	TimerHandle												loopCheckTimerHandle_;
 
-	GlobalDataClient*										pBaseAppData_;								// globalBases
+	// globalBases
+	GlobalDataClient*										pBaseAppData_;
 
 	// 记录登录到服务器但还未处理完毕的账号
 	PendingLoginMgr											pendingLoginMgr_;
@@ -484,6 +491,9 @@ protected:
 	TimerHandle												pResmgrTimerHandle_;
 
 	InitProgressHandler*									pInitProgressHandler_;
+	
+	// APP的标志
+	uint32													flags_;
 };
 
 }

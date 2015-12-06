@@ -73,7 +73,7 @@ pClientApp_(NULL),
 aspect_(id),
 velocity_(3.0f),
 enterworld_(false),
-isOnGound_(true),
+isOnGround_(true),
 pMoveHandlerID_(0)
 {
 	ENTITY_INIT_PROPERTYS(Entity);
@@ -340,7 +340,7 @@ void Entity::onUpdatePropertys(MemoryStream& s)
 }
 
 //-------------------------------------------------------------------------------------
-void Entity::writeToDB(void* data, void* extra)
+void Entity::writeToDB(void* data, void* extra1, void* extra2)
 {
 }
 
