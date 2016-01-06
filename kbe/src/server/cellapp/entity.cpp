@@ -482,6 +482,8 @@ void Entity::onDefDataChanged(const PropertyDescription* propertyDescription, Py
 			if(pChannel == NULL)
 				continue;
 
+			// 这个可能性是存在的，例如数据来源于createWitnessFromStream()
+			// 又如自己的entity还未在目标客户端上创建
 			if(!pEntity->pWitness()->entityInAOI(id()))
 				continue;
 
@@ -1766,11 +1768,11 @@ bool Entity::navigatePathPoints( std::vector<Position3D>& outPaths, const Positi
 	{
 		WARNING_MSG(fmt::format("Entity::navigatePathPoints(): space({}), entityID({}), not found navhandle!\n",
 			spaceID(), id()));
+
 		return false;
 	}
 
-	int resultCount = pNavHandle->findStraightPath(layer, position_, destination, outPaths);
-	if (resultCount < 0)
+	if (pNavHandle->findStraightPath(layer, position_, destination, outPaths) < 0)
 	{
 		return false;
 	}
@@ -1784,6 +1786,7 @@ bool Entity::navigatePathPoints( std::vector<Position3D>& outPaths, const Positi
 			iter++;
 			continue;
 		}
+
 		break;
 	}
 

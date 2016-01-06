@@ -263,7 +263,7 @@ public:
 		{
 			if (_dbmgrInfo.dbInterfaceInfos[i].name == dbInterfaceName)
 			{
-				return i;
+				return (int)i;
 			}
 		}
 
@@ -272,7 +272,7 @@ public:
 
 	const char* dbInterfaceIndex2dbInterfaceName(size_t dbInterfaceIndex)
 	{
-		if (_dbmgrInfo.dbInterfaceInfos.size() - 1 >= dbInterfaceIndex)
+		if (_dbmgrInfo.dbInterfaceInfos.size() > dbInterfaceIndex)
 		{
 			return _dbmgrInfo.dbInterfaceInfos[dbInterfaceIndex].name;
 		}

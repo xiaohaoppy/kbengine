@@ -101,6 +101,23 @@ public:
 	*/
 	void startserver(Network::Channel* pChannel, KBEngine::MemoryStream& s);
 
+	/** 信号处理
+	*/
+	virtual bool installSignals();
+	virtual void onSignalled(int sigNum);
+
+#if KBE_PLATFORM != PLATFORM_WIN32
+	/**
+	* 在linux下启动一个新进程
+	*/
+	uint16 startLinuxProcess(int32 uid, COMPONENT_TYPE componentType, uint64 cid, int16 gus);
+#else
+	/**
+	* 在windows下启动一个新进程
+	*/
+	DWORD startWindowsProcess(int32 uid, COMPONENT_TYPE componentType, uint64 cid, int16 gus);
+#endif
+
 	/** 网络接口
 		关闭服务器
 		@uid: 提供启动的uid参数

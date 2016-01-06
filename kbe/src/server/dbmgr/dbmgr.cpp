@@ -33,7 +33,6 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "thread/threadpool.h"
 #include "server/components.h"
 #include "server/telnet_server.h"
-#include "server/py_file_descriptor.h"
 #include "db_interface/db_interface.h"
 #include "db_mysql/db_interface_mysql.h"
 #include "entitydef/scriptdef_module.h"
@@ -48,47 +47,6 @@ namespace KBEngine{
 
 ServerConfig g_serverConfig;
 KBE_SINGLETON_INIT(Dbmgr);
-
-/**
-	内部定时器处理类
-*/
-class ScriptTimerHandler : public TimerHandler
-{
-public:
-	ScriptTimerHandler(ScriptTimers* scriptTimers, PyObject * callback) :
-		pyCallback_(callback),
-		scriptTimers_(scriptTimers)
-	{
-	}
-
-	~ScriptTimerHandler()
-	{
-		Py_DECREF(pyCallback_);
-	}
-
-private:
-	virtual void handleTimeout(TimerHandle handle, void * pUser)
-	{
-		int id = ScriptTimersUtil::getIDForHandle(scriptTimers_, handle);
-
-		PyObject *pyRet = PyObject_CallFunction(pyCallback_, "i", id);
-		if (pyRet == NULL)
-		{
-			SCRIPT_ERROR_CHECK();
-			return;
-		}
-		return;
-	}
-
-	virtual void onRelease(TimerHandle handle, void * /*pUser*/)
-	{
-		scriptTimers_->releaseTimer(handle);
-		delete this;
-	}
-
-	PyObject* pyCallback_;
-	ScriptTimers* scriptTimers_;
-};
 
 //-------------------------------------------------------------------------------------
 Dbmgr::Dbmgr(Network::EventDispatcher& dispatcher, 
@@ -111,10 +69,8 @@ Dbmgr::Dbmgr(Network::EventDispatcher& dispatcher,
 	pInterfacesAccountHandler_(NULL),
 	pInterfacesChargeHandler_(NULL),
 	pSyncAppDatasHandler_(NULL),
-	scriptTimers_(),
 	pTelnetServer_(NULL)
 {
-	ScriptTimers::initialize(*this);
 }
 
 //-------------------------------------------------------------------------------------
@@ -187,8 +143,6 @@ void Dbmgr::onShutdownBegin()
 	// 通知脚本
 	SCOPED_PROFILE(SCRIPTCALL_PROFILE);
 	SCRIPT_OBJECT_CALL_ARGS0(getEntryScript().get(), const_cast<char*>("onDBMgrShutDown"));
-	
-	scriptTimers_.cancelAll();
 }
 
 //-------------------------------------------------------------------------------------	
@@ -229,6 +183,8 @@ bool Dbmgr::run()
 //-------------------------------------------------------------------------------------
 void Dbmgr::handleTimeout(TimerHandle handle, void * arg)
 {
+	PythonApp::handleTimeout(handle, arg);
+
 	switch (reinterpret_cast<uintptr>(arg))
 	{
 		case TIMEOUT_TICK:
@@ -240,8 +196,6 @@ void Dbmgr::handleTimeout(TimerHandle handle, void * arg)
 		default:
 			break;
 	}
-
-	PythonApp::handleTimeout(handle, arg);
 }
 
 //-------------------------------------------------------------------------------------
@@ -250,10 +204,8 @@ void Dbmgr::handleMainTick()
 	 //time_t t = ::time(NULL);
 	 //DEBUG_MSG("Dbmgr::handleGameTick[%"PRTime"]:%u\n", t, time_);
 	
-	g_kbetime++;
 	threadPool_.onMainThreadTick();
 	DBUtil::handleMainTick();
-	handleTimers();
 	networkInterface().processChannels(&DbmgrInterface::messageHandlers);
 }
 
@@ -284,6 +236,8 @@ bool Dbmgr::inInitialize()
 //-------------------------------------------------------------------------------------
 bool Dbmgr::initializeEnd()
 {
+	PythonApp::initializeEnd();
+
 	// 添加一个timer， 每秒检查一些状态
 	loopCheckTimerHandle_ = this->dispatcher().addTimer(1000000, this,
 							reinterpret_cast<void *>(TIMEOUT_CHECK_STATUS));
@@ -339,13 +293,6 @@ void Dbmgr::onInstallPyModules()
 			ERROR_MSG( fmt::format("Dbmgr::onInstallPyModules: Unable to set KBEngine.{}.\n", SERVER_ERR_STR[i]));
 		}
 	}
-
-	APPEND_SCRIPT_MODULE_METHOD(module,		addTimer,						__py_addTimer,											METH_VARARGS,	0);
-	APPEND_SCRIPT_MODULE_METHOD(module,		delTimer,						__py_delTimer,											METH_VARARGS,	0);
-	APPEND_SCRIPT_MODULE_METHOD(module,		registerReadFileDescriptor,		PyFileDescriptor::__py_registerReadFileDescriptor,		METH_VARARGS,	0);
-	APPEND_SCRIPT_MODULE_METHOD(module,		registerWriteFileDescriptor,	PyFileDescriptor::__py_registerWriteFileDescriptor,		METH_VARARGS,	0);
-	APPEND_SCRIPT_MODULE_METHOD(module,		deregisterReadFileDescriptor,	PyFileDescriptor::__py_deregisterReadFileDescriptor,	METH_VARARGS,	0);
-	APPEND_SCRIPT_MODULE_METHOD(module,		deregisterWriteFileDescriptor,	PyFileDescriptor::__py_deregisterWriteFileDescriptor,	METH_VARARGS,	0);
 }
 
 //-------------------------------------------------------------------------------------		
@@ -392,8 +339,14 @@ bool Dbmgr::initDB()
 	std::vector<DBInterfaceInfo>::iterator dbinfo_iter = dbcfg.dbInterfaceInfos.begin();
 	for (; dbinfo_iter != dbcfg.dbInterfaceInfos.end(); ++dbinfo_iter)
 	{
-		bufferedDBTasksMaps_[(*dbinfo_iter).name].dbInterfaceName((*dbinfo_iter).name);
+		Buffered_DBTasks buffered_DBTasks;
+		bufferedDBTasksMaps_.insert(std::make_pair((*dbinfo_iter).name, buffered_DBTasks));
+		BUFFERED_DBTASKS_MAP::iterator buffered_DBTasks_iter = bufferedDBTasksMaps_.find((*dbinfo_iter).name);
+		buffered_DBTasks_iter->second.dbInterfaceName((*dbinfo_iter).name);
+	}
 
+	for (dbinfo_iter = dbcfg.dbInterfaceInfos.begin(); dbinfo_iter != dbcfg.dbInterfaceInfos.end(); ++dbinfo_iter)
+	{
 		DBInterface* pDBInterface = DBUtil::createInterface((*dbinfo_iter).name);
 		if(pDBInterface == NULL)
 		{
@@ -424,13 +377,11 @@ bool Dbmgr::initDB()
 //-------------------------------------------------------------------------------------
 void Dbmgr::finalise()
 {
-	scriptTimers_.cancelAll();
 	SAFE_RELEASE(pGlobalData_);
 	SAFE_RELEASE(pBaseAppData_);
 	SAFE_RELEASE(pCellAppData_);
 
 	DBUtil::finalise();
-	ScriptTimers::finalise(*this);
 	PythonApp::finalise();
 }
 
@@ -952,55 +903,6 @@ void Dbmgr::accountNewPassword(Network::Channel* pChannel, ENTITY_ID entityID, s
 {
 	INFO_MSG(fmt::format("Dbmgr::accountNewPassword: accountName={}.\n", accountName));
 	pInterfacesAccountHandler_->accountNewPassword(pChannel, entityID, accountName, password, newpassword);
-}
-
-//-------------------------------------------------------------------------------------
-PyObject* Dbmgr::__py_addTimer(PyObject* self, PyObject* args)
-{
-	float interval, repeat;
-	PyObject *callback;
-
-	if (!PyArg_ParseTuple(args, "ffO", &interval, &repeat, &callback))
-		S_Return;
-
-	if (!PyCallable_Check(callback))
-	{
-		PyErr_Format(PyExc_TypeError, "Dbmgr::addTimer: '%.200s' object is not callable", callback->ob_type->tp_name);
-		PyErr_PrintEx(0);
-		S_Return;
-	}
-
-	ScriptTimers * pTimers = &Dbmgr::getSingleton().scriptTimers();
-	ScriptTimerHandler *handler = new ScriptTimerHandler(pTimers, callback);
-
-	int id = ScriptTimersUtil::addTimer(&pTimers, interval, repeat, 0, handler);
-
-	if (id == 0)
-	{
-		delete handler;
-		PyErr_SetString(PyExc_ValueError, "Unable to add timer");
-		PyErr_PrintEx(0);
-		S_Return;
-	}
-
-	Py_INCREF(callback);
-	return PyLong_FromLong(id);
-}
-
-//-------------------------------------------------------------------------------------
-PyObject* Dbmgr::__py_delTimer(PyObject* self, PyObject* args)
-{
-	ScriptID timerID;
-
-	if (!PyArg_ParseTuple(args, "i", &timerID))
-		return NULL;
-
-	if (!ScriptTimersUtil::delTimer(&Dbmgr::getSingleton().scriptTimers(), timerID))
-	{
-		return PyLong_FromLong(-1);
-	}
-
-	return PyLong_FromLong(timerID);
 }
 
 //-------------------------------------------------------------------------------------
