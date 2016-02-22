@@ -955,10 +955,8 @@ PyObject* Entity::pyHasWitness()
 //-------------------------------------------------------------------------------------
 void Entity::restoreProximitys()
 {
-	if(this->pWitness() && this->pWitness()->pAOITrigger())
-	{
-		((RangeTrigger*)(this->pWitness()->pAOITrigger()))->reinstall(static_cast<CoordinateNode*>(this->pEntityCoordinateNode()));
-	}
+	if(this->pWitness())
+		this->pWitness()->installAOITrigger();
 
 	Controllers::CONTROLLERS_MAP& objects = pControllers_->objects();
 	Controllers::CONTROLLERS_MAP::iterator iter = objects.begin();
@@ -1903,11 +1901,11 @@ PyObject* Entity::pyNavigatePathPoints(PyObject_ptr pyDestination, float maxSear
 }
 
 //-------------------------------------------------------------------------------------
-uint32 Entity::navigate(const Position3D& destination, float velocity, float distance, float maxMoveDistance, float maxDistance, 
+uint32 Entity::navigate(const Position3D& destination, float velocity, float distance, float maxMoveDistance, float maxSearchDistance,
 	bool faceMovement, int8 layer, PyObject* userData)
 {
 	VECTOR_POS3D_PTR paths_ptr( new std::vector<Position3D>() );
-	navigatePathPoints(*paths_ptr, destination, maxDistance, layer);
+	navigatePathPoints(*paths_ptr, destination, maxSearchDistance, layer);
 	if (paths_ptr->size() <= 0)
 	{
 		return 0;
@@ -1967,7 +1965,6 @@ PyObject* Entity::pyNavigate(PyObject_ptr pyDestination, float velocity, float d
 
 	// 将坐标信息提取出来
 	script::ScriptVector3::convertPyObjectToVector3(destination, pyDestination);
-	Py_INCREF(userData);
 
 	return PyLong_FromLong(navigate(destination, velocity, distance, maxMoveDistance, 
 		maxDistance, faceMovement > 0, layer, userData));
@@ -2095,7 +2092,6 @@ PyObject* Entity::pyMoveToPoint(PyObject_ptr pyDestination, float velocity, floa
 
 	// 将坐标信息提取出来
 	script::ScriptVector3::convertPyObjectToVector3(destination, pyDestination);
-	Py_INCREF(userData);
 
 	return PyLong_FromLong(moveToPoint(destination, velocity, distance, userData, faceMovement > 0, moveVertically > 0));
 }
@@ -2140,7 +2136,6 @@ PyObject* Entity::pyMoveToEntity(ENTITY_ID targetID, float velocity, float dista
 		return 0;
 	}
 
-	Py_INCREF(userData);
 	return PyLong_FromLong(moveToEntity(targetID, velocity, distance, userData, faceMovement > 0, moveVertically > 0));
 }
 
@@ -2228,7 +2223,6 @@ PyObject* Entity::pyAddYawRotator(float yaw, float velocity, PyObject* userData)
 		return 0;
 	}
 
-	Py_INCREF(userData);
 	return PyLong_FromLong(addYawRotator(yaw, velocity, userData));
 }
 

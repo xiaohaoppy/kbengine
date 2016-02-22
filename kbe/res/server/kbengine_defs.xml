@@ -248,6 +248,18 @@
 		-->
 		<internalInterface>  </internalInterface>
 		
+		<!-- Interfaces进程的地址（参考interfaces中地址配置）
+			(Address of Interfaces process)
+		-->
+		<InterfacesServiceAddr>
+			<!-- 如果enable为false则相关数据不转发到Interfaces进程 
+				注意：如果为true，dbmgr认为数据将由interfaces交给第三方平台处理，本地不再验证登陆密码
+			-->
+			<enable> false		</enable>
+			<host>	 localhost	</host>
+			<port>	 30099		</port>
+		</InterfacesServiceAddr>
+
 		<!-- 数据库接口 
 			(database interfaces)
 		-->
