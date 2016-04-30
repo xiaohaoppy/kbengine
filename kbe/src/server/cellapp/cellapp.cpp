@@ -304,6 +304,8 @@ void Cellapp::finalise()
 
 	Spaces::finalise();
 	Navigation::getSingleton().finalise();
+	forward_messagebuffer_.clear();
+
 	EntityApp<Entity>::finalise();
 }
 
@@ -333,7 +335,7 @@ void Cellapp::onGetEntityAppFromDbmgr(Network::Channel* pChannel, int32 uid, std
 					((int32)globalorderID), 
 					((int32)grouporderID)));
 
-			Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+			Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 			(*pBundle).newMessage(DbmgrInterface::reqKillServer);
 			(*pBundle) << g_componentID << g_componentType << KBEngine::getUsername() << KBEngine::getUserUID() << "Duplicate app-id.";
 			pChannel->send(pBundle);
@@ -374,7 +376,7 @@ void Cellapp::onGetEntityAppFromDbmgr(Network::Channel* pChannel, int32 uid, std
 	int ret = Components::getSingleton().connectComponent(tcomponentType, uid, componentID);
 	KBE_ASSERT(ret != -1);
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 
 	switch(tcomponentType)
 	{
@@ -406,7 +408,7 @@ void Cellapp::onUpdateLoad()
 	Network::Channel* pChannel = Components::getSingleton().getCellappmgrChannel();
 	if(pChannel != NULL)
 	{
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(CellappmgrInterface::updateCellapp);
 		CellappmgrInterface::updateCellappArgs4::staticAddToBundle((*pBundle), 
 			componentID_, (ENTITY_ID)pEntities_->getEntities().size(), getLoad(), flags_);
@@ -556,7 +558,7 @@ void Cellapp::executeRawDatabaseCommand(const char* datas, uint32 size, PyObject
 
 	//INFO_MSG(fmt::format("KBEngine::executeRawDatabaseCommand{}:{}.\n", (eid > 0 ? fmt::format("(entityID={})", eid) : ""), datas));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	(*pBundle).newMessage(DbmgrInterface::executeRawDatabaseCommand);
 	(*pBundle) << eid;
 	(*pBundle) << (uint16)dbInterfaceIndex;
@@ -837,7 +839,7 @@ void Cellapp::onCreateInNewSpaceFromBaseapp(Network::Channel* pChannel, KBEngine
 			ERROR_MSG("Cellapp::onCreateInNewSpaceFromBaseapp: createEntity error!\n");
 
 			/* 目前来说除非内存或者系统问题，否则不会出现这个错误
-			Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+			Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 			pBundle->newMessage(BaseappInterface::onCreateCellFailure);
 			BaseappInterface::onCreateCellFailureArgs1::staticAddToBundle(*pBundle, mailboxEntityID);
 			cinfos->pChannel->send(pBundle);
@@ -862,14 +864,14 @@ void Cellapp::onCreateInNewSpaceFromBaseapp(Network::Channel* pChannel, KBEngine
 
 			// 为了能够让entity.__init__中能够修改属性立刻能广播到客户端我们需要提前设置这些
 			e->clientMailbox(client);
-			e->setWitness(Witness::ObjPool().createObject());
+			e->setWitness(Witness::createPoolObject());
 		}
 
 		// 此处baseapp可能还有没初始化过来， 所以有一定概率是为None的
 		Components::ComponentInfos* cinfos = Components::getSingleton().findComponent(BASEAPP_TYPE, componentID);
 		if(cinfos == NULL || cinfos->pChannel == NULL)
 		{
-			Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+			Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 			ForwardItem* pFI = new ForwardItem();
 			pFI->pHandler = new FMH_Baseapp_onEntityGetCellFrom_onCreateInNewSpaceFromBaseapp(e, spaceID, cellData);
 			//Py_XDECREF(cellData);
@@ -901,7 +903,7 @@ void Cellapp::onCreateInNewSpaceFromBaseapp(Network::Channel* pChannel, KBEngine
 			space->onEnterWorld(e);
 		}
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(BaseappInterface::onEntityGetCell);
 		BaseappInterface::onEntityGetCellArgs3::staticAddToBundle((*pBundle), mailboxEntityID, componentID_, spaceID);
 		cinfos->pChannel->send(pBundle);
@@ -960,14 +962,14 @@ void Cellapp::onRestoreSpaceInCellFromBaseapp(Network::Channel* pChannel, KBEngi
 
 			// 为了能够让entity.__init__中能够修改属性立刻能广播到客户端我们需要提前设置这些
 			e->clientMailbox(client);
-			e->setWitness(Witness::ObjPool().createObject());
+			e->setWitness(Witness::createPoolObject());
 		}
 
 		// 此处baseapp可能还有没初始化过来， 所以有一定概率是为None的
 		Components::ComponentInfos* cinfos = Components::getSingleton().findComponent(BASEAPP_TYPE, componentID);
 		if(cinfos == NULL || cinfos->pChannel == NULL)
 		{
-			Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+			Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 			ForwardItem* pFI = new ForwardItem();
 			pFI->pHandler = new FMH_Baseapp_onEntityGetCellFrom_onCreateInNewSpaceFromBaseapp(e, spaceID, cellData);
 			//Py_XDECREF(cellData);
@@ -991,7 +993,7 @@ void Cellapp::onRestoreSpaceInCellFromBaseapp(Network::Channel* pChannel, KBEngi
 
 		space->addEntityAndEnterWorld(e, true);
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(BaseappInterface::onEntityGetCell);
 		BaseappInterface::onEntityGetCellArgs3::staticAddToBundle((*pBundle), mailboxEntityID, componentID_, spaceID);
 		cinfos->pChannel->send(pBundle);
@@ -1013,7 +1015,7 @@ void Cellapp::requestRestore(Network::Channel* pChannel, KBEngine::MemoryStream&
 	DEBUG_MSG(fmt::format("Cellapp::requestRestore: cid={}, canRestore={}, channel={}.\n", 
 		cid, canRestore, pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	(*pBundle).newMessage(BaseappInterface::onRequestRestoreCB);
 	(*pBundle) << g_componentID << cid << canRestore;
 	pChannel->send(pBundle);
@@ -1041,10 +1043,10 @@ void Cellapp::onCreateCellEntityFromBaseapp(Network::Channel* pChannel, KBEngine
 	Components::ComponentInfos* cinfos = Components::getSingleton().findComponent(BASEAPP_TYPE, componentID);
 	if(cinfos == NULL || cinfos->pChannel == NULL)
 	{
-		MemoryStream* pCellData = MemoryStream::ObjPool().createObject();
+		MemoryStream* pCellData = MemoryStream::createPoolObject();
 		pCellData->append(s);
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		ForwardItem* pFI = new ForwardItem();
 		pFI->pHandler = new FMH_Baseapp_onEntityGetCellFrom_onCreateCellEntityFromBaseapp(entityType, createToEntityID, 
 			entityID, pCellData, hasClient, inRescore, componentID, spaceID);
@@ -1082,7 +1084,7 @@ void Cellapp::_onCreateCellEntityFromBaseapp(std::string& entityType, ENTITY_ID 
 	{
 		ERROR_MSG("Cellapp::_onCreateCellEntityFromBaseapp: not fount spaceEntity. may have been destroyed!\n");
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		pBundle->newMessage(BaseappInterface::onCreateCellFailure);
 		BaseappInterface::onCreateCellFailureArgs1::staticAddToBundle(*pBundle, entityID);
 		cinfos->pChannel->send(pBundle);
@@ -1098,7 +1100,7 @@ void Cellapp::_onCreateCellEntityFromBaseapp(std::string& entityType, ENTITY_ID 
 	if(space != NULL && space->isGood())
 	{
 		// 告知baseapp， entity的cell创建了
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		pBundle->newMessage(BaseappInterface::onEntityGetCell);
 		BaseappInterface::onEntityGetCellArgs3::staticAddToBundle(*pBundle, entityID, componentID_, spaceID);
 		cinfos->pChannel->send(pBundle);
@@ -1133,7 +1135,7 @@ void Cellapp::_onCreateCellEntityFromBaseapp(std::string& entityType, ENTITY_ID 
 
 			// 为了能够让entity.__init__中能够修改属性立刻能广播到客户端我们需要提前设置这些
 			e->clientMailbox(client);
-			e->setWitness(Witness::ObjPool().createObject());
+			e->setWitness(Witness::createPoolObject());
 		}
 
 		space->addEntity(e);
@@ -1207,7 +1209,7 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 			COMPONENT_ID cellID = gm->getRoute(eid);
 			if(gm && cellID > 0)
 			{
-				Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+				Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 				(*pBundle).newMessage(CellappInterface::onEntityMail);
 				(*pBundle) << eid << mailtype;
 				(*pBundle).append(s);
@@ -1222,7 +1224,7 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 		return;
 	}
 	
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	Network::Bundle& bundle = *pBundle;
 	bool reclaim = true;
 
@@ -1297,7 +1299,7 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 	};
 
 	if(reclaim)
-		Network::Bundle::ObjPool().reclaimObject(pBundle);
+		Network::Bundle::reclaimPoolObject(pBundle);
 
 	s.done();
 }
@@ -1376,7 +1378,7 @@ void Cellapp::onUpdateGhostPropertys(Network::Channel* pChannel, KBEngine::Memor
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::ObjPool().createObject();
+				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
 				(*pForwardBundle).newMessage(CellappInterface::onUpdateGhostPropertys);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1413,7 +1415,7 @@ void Cellapp::onRemoteRealMethodCall(Network::Channel* pChannel, KBEngine::Memor
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::ObjPool().createObject();
+				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
 				(*pForwardBundle).newMessage(CellappInterface::onRemoteRealMethodCall);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1450,7 +1452,7 @@ void Cellapp::onUpdateGhostVolatileData(Network::Channel* pChannel, KBEngine::Me
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::ObjPool().createObject();
+				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
 				(*pForwardBundle).newMessage(CellappInterface::onUpdateGhostVolatileData);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1594,7 +1596,7 @@ void Cellapp::lookApp(Network::Channel* pChannel)
 
 	DEBUG_MSG(fmt::format("Cellapp::lookApp: {}\n", pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	
 	(*pBundle) << g_componentType;
 	(*pBundle) << componentID_;
@@ -1692,7 +1694,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	{
 		s.rpos((int)rpos);
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(CellappInterface::reqTeleportToCellAppCB);
 		(*pBundle) << g_componentID << entityBaseappID;
 		(*pBundle) << teleportEntityID;
@@ -1712,7 +1714,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	{
 		s.rpos((int)rpos);
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(CellappInterface::reqTeleportToCellAppCB);
 		(*pBundle) << g_componentID << entityBaseappID;
 		(*pBundle) << teleportEntityID;
@@ -1731,7 +1733,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	{
 		s.rpos((int)rpos);
 
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(CellappInterface::reqTeleportToCellAppCB);
 		(*pBundle) << g_componentID << entityBaseappID;
 		(*pBundle) << teleportEntityID;
@@ -1764,13 +1766,12 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	// 进入新space之前必须通知客户端leaveSpace
 	if(e->clientMailbox())
 	{
-		Network::Bundle* pSendBundle = Network::Bundle::ObjPool().createObject();
-		Network::Bundle* pForwardBundle = Network::Bundle::ObjPool().createObject();
-		(*pForwardBundle).newMessage(ClientInterface::onEntityLeaveSpace);
-		(*pForwardBundle) << e->id();
-		NETWORK_ENTITY_MESSAGE_FORWARD_CLIENT(e->id(), (*pSendBundle), (*pForwardBundle));
+		Network::Bundle* pSendBundle = Network::Bundle::createPoolObject();
+		NETWORK_ENTITY_MESSAGE_FORWARD_CLIENT_START(e->id(), (*pSendBundle));
+		ENTITY_MESSAGE_FORWARD_CLIENT_START(pSendBundle, ClientInterface::onEntityLeaveSpace, leaveSpace);
+		(*pSendBundle) << e->id();
+		ENTITY_MESSAGE_FORWARD_CLIENT_END(pSendBundle, ClientInterface::onEntityLeaveSpace, leaveSpace);
 		e->clientMailbox()->postMail(pSendBundle);
-		Network::Bundle::ObjPool().reclaimObject(pForwardBundle);
 	}
 
 	// 进入新的space中
@@ -1786,7 +1787,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 		entityBaseappID = e->baseMailbox()->componentID();
 
 	{
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		(*pBundle).newMessage(CellappInterface::reqTeleportToCellAppCB);
 		(*pBundle) << g_componentID << entityBaseappID;
 		(*pBundle) << teleportEntityID;
@@ -1810,7 +1811,7 @@ void Cellapp::reqTeleportToCellAppCB(Network::Channel* pChannel, MemoryStream& s
 		Components::ComponentInfos* pInfos = Components::getSingleton().findComponent(entityBaseappID);
 		if(pInfos && pInfos->pChannel)
 		{
-			Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+			Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 			(*pBundle).newMessage(BaseappInterface::onMigrationCellappEnd);
 			(*pBundle) << teleportEntityID;
 
@@ -1850,9 +1851,9 @@ void Cellapp::reqTeleportToCellAppCB(Network::Channel* pChannel, MemoryStream& s
 	Position3D pos;
 	Direction3D dir;
 	ENTITY_SCRIPT_UID entityType;
-	SPACE_ID spaceID = 0, lastSpaceID = 0;
+	SPACE_ID lastSpaceID = 0;
 
-	s >> teleportEntityID >> nearbyMBRefID >> lastSpaceID >> spaceID;
+	s >> teleportEntityID >> nearbyMBRefID >> lastSpaceID;
 	s >> entityType;
 	s >> pos.x >> pos.y >> pos.z;
 	s >> dir.dir.x >> dir.dir.y >> dir.dir.z;

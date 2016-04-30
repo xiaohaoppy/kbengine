@@ -259,8 +259,8 @@ public:
 	/** 网络接口
 		服务器更新avatar基础位置
 	*/
-	virtual void onUpdateBasePos(Network::Channel* pChannel, MemoryStream& s);
-	virtual void onUpdateBasePosXZ(Network::Channel* pChannel, MemoryStream& s);
+	virtual void onUpdateBasePos(Network::Channel* pChannel, float x, float y, float z);
+	virtual void onUpdateBasePosXZ(Network::Channel* pChannel, float x, float z);
 
 	/** 网络接口
 		服务器更新VolatileData
@@ -350,8 +350,6 @@ public:
 		获得player实例
 	*/
 	client::Entity* pPlayer();
-	void setPlayerPosition(float x, float y, float z){ entityPos_ = Position3D(x, y, z); }
-	void setPlayerDirection(float roll, float pitch, float yaw){ entityDir_ = Direction3D(roll, pitch, yaw); }
 
 	void setTargetID(ENTITY_ID id){ 
 		targetID_ = id; 
@@ -368,7 +366,7 @@ public:
 		space相关操作接口
 		服务端添加了某个space的几何映射
 	*/
-	void addSpaceGeometryMapping(SPACE_ID spaceID, const std::string& respath);
+	virtual void addSpaceGeometryMapping(SPACE_ID spaceID, const std::string& respath);
 	virtual void onAddSpaceGeometryMapping(SPACE_ID spaceID, const std::string& respath){}
 	virtual void onLoadedSpaceGeometryMapping(SPACE_ID spaceID){
 		isLoadedGeometry_ = true;
@@ -376,9 +374,9 @@ public:
 
 	const std::string& getGeometryPath();
 	
-	void initSpaceData(Network::Channel* pChannel, MemoryStream& s);
-	void setSpaceData(Network::Channel* pChannel, SPACE_ID spaceID, const std::string& key, const std::string& value);
-	void delSpaceData(Network::Channel* pChannel, SPACE_ID spaceID, const std::string& key);
+	virtual void initSpaceData(Network::Channel* pChannel, MemoryStream& s);
+	virtual void setSpaceData(Network::Channel* pChannel, SPACE_ID spaceID, const std::string& key, const std::string& value);
+	virtual void delSpaceData(Network::Channel* pChannel, SPACE_ID spaceID, const std::string& key);
 	bool hasSpaceData(const std::string& key);
 	const std::string& getSpaceData(const std::string& key);
 	static PyObject* __py_GetSpaceData(PyObject* self, PyObject* args);
@@ -412,9 +410,6 @@ protected:
 
 	ENTITY_ID												entityID_;
 	SPACE_ID												spaceID_;
-
-	Position3D												entityPos_;
-	Direction3D												entityDir_;
 
 	DBID													dbid_;
 

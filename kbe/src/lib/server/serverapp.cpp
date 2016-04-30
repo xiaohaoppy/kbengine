@@ -199,7 +199,7 @@ void ServerApp::queryWatcher(Network::Channel* pChannel, MemoryStream& s)
 	MemoryStream::SmartPoolObjectPtr readStreamPtr1 = MemoryStream::createSmartPoolObj();
 	WatcherPaths::root().readChildPaths(path, path, readStreamPtr1.get()->get());
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	ConsoleInterface::ConsoleWatcherCBMessageHandler msgHandler;
 	(*pBundle).newMessage(msgHandler);
 
@@ -208,7 +208,7 @@ void ServerApp::queryWatcher(Network::Channel* pChannel, MemoryStream& s)
 	(*pBundle).append(readStreamPtr.get()->get());
 	pChannel->send(pBundle);
 
-	Network::Bundle* pBundle1 = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle1 = Network::Bundle::createPoolObject();
 	(*pBundle1).newMessage(msgHandler);
 
 	type = 1;
@@ -295,7 +295,7 @@ void ServerApp::onChannelTimeOut(Network::Channel * pChannel)
 
 	networkInterface_.deregisterChannel(pChannel);
 	pChannel->destroy();
-	Network::Channel::ObjPool().reclaimObject(pChannel);
+	Network::Channel::reclaimPoolObject(pChannel);
 }
 
 //-------------------------------------------------------------------------------------
@@ -331,6 +331,16 @@ void ServerApp::onRemoveComponent(const Components::ComponentInfos* pInfos)
 			g_componentType != INTERFACES_TYPE &&
 			g_componentType != BOTS_TYPE &&
 			g_componentType != WATCHER_TYPE)
+			this->shutDown(0.f);
+	}
+	else if (pInfos->componentType == CELLAPPMGR_TYPE)
+	{
+		if (g_componentType == CELLAPP_TYPE)
+			this->shutDown(0.f);
+	}
+	else if (pInfos->componentType == BASEAPPMGR_TYPE)
+	{
+		if (g_componentType == BASEAPP_TYPE)
 			this->shutDown(0.f);
 	}
 }
@@ -451,7 +461,7 @@ void ServerApp::lookApp(Network::Channel* pChannel)
 
 	DEBUG_MSG(fmt::format("ServerApp::lookApp: {}\n", pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	
 	(*pBundle) << g_componentType;
 	(*pBundle) << componentID_;
@@ -468,7 +478,7 @@ void ServerApp::reqCloseServer(Network::Channel* pChannel, MemoryStream& s)
 {
 	DEBUG_MSG(fmt::format("ServerApp::reqCloseServer: {}\n", pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	
 	bool success = true;
 	(*pBundle) << success;

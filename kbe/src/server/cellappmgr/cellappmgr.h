@@ -97,15 +97,23 @@ public:
 	bool componentsReady();
 	bool componentReady(COMPONENT_ID cid);
 
+	void removeCellapp(COMPONENT_ID cid);
+	Cellapp& getCellapp(COMPONENT_ID cid);
+	std::map< COMPONENT_ID, Cellapp >& cellapps();
+
+	uint32 numLoadBalancingApp();
+
 protected:
 	TimerHandle							gameTimer_;
-	ForwardAnywhere_MessageBuffer		forward_cellapp_messagebuffer_;
+	ForwardAnywhere_MessageBuffer		forward_anywhere_cellapp_messagebuffer_;
+	ForwardComponent_MessageBuffer		forward_cellapp_messagebuffer_;
 
 	COMPONENT_ID						bestCellappID_;
 
 	std::map< COMPONENT_ID, Cellapp >	cellapps_;
+	std::vector<COMPONENT_ID>			cellapp_cids_;
 };
 
-}
+} 
 
 #endif // KBE_CELLAPPMGR_H

@@ -404,7 +404,7 @@ void Bots::lookApp(Network::Channel* pChannel)
 {
 	DEBUG_MSG(fmt::format("Bots::lookApp: {0}\n", pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	
 	(*pBundle) << g_componentType;
 	(*pBundle) << componentID_;
@@ -419,7 +419,7 @@ void Bots::reqCloseServer(Network::Channel* pChannel, MemoryStream& s)
 {
 	DEBUG_MSG(fmt::format("Bots::reqCloseServer: {0}\n", pChannel->c_str()));
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	
 	bool success = true;
 	(*pBundle) << success;
@@ -473,7 +473,7 @@ void Bots::onExecScriptCommand(Network::Channel* pChannel, KBEngine::MemoryStrea
 	if(getScript().run_simpleString(PyBytes_AsString(pycmd1), &retbuf) == 0)
 	{
 		// 将结果返回给客户端
-		Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 		ConsoleInterface::ConsoleExecCommandCBMessageHandler msgHandler;
 		(*pBundle).newMessage(msgHandler);
 		ConsoleInterface::ConsoleExecCommandCBMessageHandlerArgs1::staticAddToBundle((*pBundle), retbuf);
@@ -775,22 +775,22 @@ void Bots::onUpdatePropertysOptimized(Network::Channel* pChannel, MemoryStream& 
 }
 
 //-------------------------------------------------------------------------------------
-void Bots::onUpdateBasePos(Network::Channel* pChannel, MemoryStream& s)
+void Bots::onUpdateBasePos(Network::Channel* pChannel, float x, float y, float z)
 {
 	ClientObject* pClient = findClient(pChannel);
 	if(pClient)
 	{
-		pClient->onUpdateBasePos(pChannel, s);
+		pClient->onUpdateBasePos(pChannel, x, y, z);
 	}
 }
 
 //-------------------------------------------------------------------------------------
-void Bots::onUpdateBasePosXZ(Network::Channel* pChannel, MemoryStream& s)
+void Bots::onUpdateBasePosXZ(Network::Channel* pChannel, float x, float z)
 {
 	ClientObject* pClient = findClient(pChannel);
 	if(pClient)
 	{
-		pClient->onUpdateBasePosXZ(pChannel, s);
+		pClient->onUpdateBasePosXZ(pChannel, x, z);
 	}
 }
 
@@ -1075,6 +1075,16 @@ void Bots::onStreamDataCompleted(Network::Channel* pChannel, int16 id)
 }
 
 //-------------------------------------------------------------------------------------	
+void Bots::initSpaceData(Network::Channel* pChannel, MemoryStream& s)
+{
+	ClientObject* pClient = findClient(pChannel);
+	if (pClient)
+	{
+		pClient->initSpaceData(pChannel, s);
+	}
+}
+
+//-------------------------------------------------------------------------------------	
 void Bots::setSpaceData(Network::Channel* pChannel, SPACE_ID spaceID, const std::string& key, const std::string& value)
 {
 	ClientObject* pClient = findClient(pChannel);
@@ -1108,7 +1118,7 @@ void Bots::queryWatcher(Network::Channel* pChannel, MemoryStream& s)
 	MemoryStream::SmartPoolObjectPtr readStreamPtr1 = MemoryStream::createSmartPoolObj();
 	WatcherPaths::root().readChildPaths(path, path, readStreamPtr1.get()->get());
 
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	ConsoleInterface::ConsoleWatcherCBMessageHandler msgHandler;
 	(*pBundle).newMessage(msgHandler);
 
@@ -1117,7 +1127,7 @@ void Bots::queryWatcher(Network::Channel* pChannel, MemoryStream& s)
 	(*pBundle).append(readStreamPtr.get()->get());
 	pChannel->send(pBundle);
 
-	Network::Bundle* pBundle1 = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle1 = Network::Bundle::createPoolObject();
 	(*pBundle1).newMessage(msgHandler);
 
 	type = 1;

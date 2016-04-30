@@ -20,6 +20,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 
 
 #include "python_app.h"
+#include "pyscript/py_memorystream.h"
 #include "server/py_file_descriptor.h"
 
 namespace KBEngine{
@@ -222,12 +223,17 @@ bool PythonApp::installPyScript()
 	tbuf = KBEngine::strutil::char2wchar(const_cast<char*>(kbe_res_path.c_str()));
 	bool ret = getScript().install(tbuf, pyPaths, "KBEngine", componentType_);
 	free(tbuf);
+
+	if (ret)
+		script::PyMemoryStream::installScript(NULL);
+
 	return ret;
 }
 
 //-------------------------------------------------------------------------------------
 bool PythonApp::uninstallPyScript()
 {
+	script::PyMemoryStream::uninstallScript();
 	return uninstallPyModules() && getScript().uninstall();
 }
 
@@ -272,6 +278,8 @@ bool PythonApp::installPyModules()
 	}
 
 	PyObject * module = getScript().getModule();
+
+	APPEND_SCRIPT_MODULE_METHOD(module, MemoryStream, script::PyMemoryStream::py_new, METH_VARARGS, 0);
 
 	// 注册创建entity的方法到py
 	// 向脚本注册app发布状态
@@ -377,7 +385,7 @@ PyObject* PythonApp::__py_setScriptLogType(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::scriptLogType(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	int type = -1;
@@ -386,7 +394,7 @@ PyObject* PythonApp::__py_setScriptLogType(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::scriptLogType(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	DebugHelper::getSingleton().setScriptMsgType(type);
@@ -401,7 +409,7 @@ PyObject* PythonApp::__py_getResFullPath(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::getResFullPath(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	char* respath = NULL;
@@ -410,7 +418,7 @@ PyObject* PythonApp::__py_getResFullPath(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::getResFullPath(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	if(!Resmgr::getSingleton().hasRes(respath))
@@ -428,7 +436,7 @@ PyObject* PythonApp::__py_hasRes(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::hasRes(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	char* respath = NULL;
@@ -437,7 +445,7 @@ PyObject* PythonApp::__py_hasRes(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::hasRes(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	return PyBool_FromLong(Resmgr::getSingleton().hasRes(respath));
@@ -451,7 +459,7 @@ PyObject* PythonApp::__py_kbeOpen(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::open(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	char* respath = NULL;
@@ -461,7 +469,7 @@ PyObject* PythonApp::__py_kbeOpen(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::open(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	std::string sfullpath = Resmgr::getSingleton().matchRes(respath);
@@ -486,7 +494,7 @@ PyObject* PythonApp::__py_matchPath(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::matchPath(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	char* respath = NULL;
@@ -495,7 +503,7 @@ PyObject* PythonApp::__py_matchPath(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::matchPath(): args is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	std::string path = Resmgr::getSingleton().matchPath(respath);
@@ -510,7 +518,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path, pathargs=\'*.*\'] is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	std::wstring wExtendName = L"*";
@@ -523,7 +531,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 		{
 			PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path] is error!");
 			PyErr_PrintEx(0);
-			return 0;
+			S_Return;
 		}
 	}
 	else
@@ -532,7 +540,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 		{
 			PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path, pathargs=\'*.*\'] is error!");
 			PyErr_PrintEx(0);
-			return 0;
+			S_Return;
 		}
 		
 		if(PyUnicode_Check(path_argsobj))
@@ -555,7 +563,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 					{
 						PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path, pathargs=\'*.*\'] is error!");
 						PyErr_PrintEx(0);
-						return 0;
+						S_Return;
 					}
 					
 					wchar_t* wtemp = NULL;
@@ -569,7 +577,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 			{
 				PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[pathargs] is error!");
 				PyErr_PrintEx(0);
-				return 0;
+				S_Return;
 			}
 		}
 	}
@@ -578,21 +586,21 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path] is error!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	if(PyUnicode_GET_LENGTH(pathobj) == 0)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path] is NULL!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	if(wExtendName.size() == 0)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[pathargs] is NULL!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	if(wExtendName[0] == '.')
@@ -606,7 +614,7 @@ PyObject* PythonApp::__py_listPathRes(PyObject* self, PyObject* args)
 	{
 		PyErr_Format(PyExc_TypeError, "KBEngine::listPathRes(): args[path] is NULL!");
 		PyErr_PrintEx(0);
-		return 0;
+		S_Return;
 	}
 
 	char* cpath = strutil::wchar2char(respath);
@@ -673,7 +681,7 @@ void PythonApp::onExecScriptCommand(Network::Channel* pChannel, KBEngine::Memory
 	}
 
 	// 将结果返回给客户端
-	Network::Bundle* pBundle = Network::Bundle::ObjPool().createObject();
+	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
 	ConsoleInterface::ConsoleExecCommandCBMessageHandler msgHandler;
 	(*pBundle).newMessage(msgHandler);
 	ConsoleInterface::ConsoleExecCommandCBMessageHandlerArgs1::staticAddToBundle((*pBundle), retbuf);
@@ -711,22 +719,22 @@ void PythonApp::reloadScript(bool fullReload)
 PyObject* PythonApp::__py_addTimer(PyObject* self, PyObject* args)
 {
 	float interval, repeat;
-	PyObject *callback;
+	PyObject *pyCallback;
 
-	if (!PyArg_ParseTuple(args, "ffO", &interval, &repeat, &callback))
+	if (!PyArg_ParseTuple(args, "ffO", &interval, &repeat, &pyCallback))
 		S_Return;
 
-	if (!PyCallable_Check(callback))
+	if (!PyCallable_Check(pyCallback))
 	{
-		PyErr_Format(PyExc_TypeError, "Interfaces::addTimer: '%.200s' object is not callable", callback->ob_type->tp_name);
+		PyErr_Format(PyExc_TypeError, "KBEngine::addTimer: '%.200s' object is not callable", (pyCallback ? pyCallback->ob_type->tp_name : "NULL"));
 		PyErr_PrintEx(0);
 		S_Return;
 	}
 
 	ScriptTimers * pTimers = &scriptTimers();
-	ScriptTimerHandler *handler = new ScriptTimerHandler(pTimers, callback);
+	ScriptTimerHandler *handler = new ScriptTimerHandler(pTimers, pyCallback);
 
-	int id = ScriptTimersUtil::addTimer(&pTimers, interval, repeat, 0, handler);
+	ScriptID id = ScriptTimersUtil::addTimer(&pTimers, interval, repeat, 0, handler);
 
 	if (id == 0)
 	{
@@ -736,7 +744,7 @@ PyObject* PythonApp::__py_addTimer(PyObject* self, PyObject* args)
 		S_Return;
 	}
 
-	Py_INCREF(callback);
+	Py_INCREF(pyCallback);
 	return PyLong_FromLong(id);
 }
 
@@ -746,10 +754,16 @@ PyObject* PythonApp::__py_delTimer(PyObject* self, PyObject* args)
 	ScriptID timerID;
 
 	if (!PyArg_ParseTuple(args, "i", &timerID))
-		return NULL;
+	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::delTimer: args error!");
+		PyErr_PrintEx(0);
+		S_Return;
+	}
 
 	if (!ScriptTimersUtil::delTimer(&scriptTimers(), timerID))
 	{
+		PyErr_Format(PyExc_TypeError, "KBEngine::delTimer: error!");
+		PyErr_PrintEx(0);
 		return PyLong_FromLong(-1);
 	}
 
