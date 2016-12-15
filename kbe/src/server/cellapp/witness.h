@@ -88,14 +88,13 @@ public:
 	void addToStream(KBEngine::MemoryStream& s);
 	void createFromStream(KBEngine::MemoryStream& s);
 
-	virtual std::string c_str(){ return "Witness"; }
-
 	typedef KBEShared_ptr< SmartPoolObject< Witness > > SmartPoolObjectPtr;
 	static SmartPoolObjectPtr createSmartPoolObj();
 
 	static ObjectPool<Witness>& ObjPool();
 	static Witness* createPoolObject();
 	static void reclaimPoolObject(Witness* obj);
+	static void destroyObjPool();
 	void onReclaimObject();
 
 	virtual size_t getPoolObjectBytes()
@@ -103,7 +102,7 @@ public:
 		size_t bytes = sizeof(pEntity_)
 		 + sizeof(aoiRadius_) + sizeof(aoiHysteresisArea_)
 		 + sizeof(pAOITrigger_) + sizeof(pAOIHysteresisAreaTrigger_) + sizeof(clientAOISize_)
-		 + sizeof(lastBasePos) + (sizeof(EntityRef*) * aoiEntities_map_.size());
+		 + sizeof(lastBasePos_) + (sizeof(EntityRef*) * aoiEntities_map_.size());
 
 		return bytes;
 	}
@@ -128,6 +127,11 @@ public:
 		基础位置， 如果有坐骑基础位置可能是坐骑等
 	*/
 	INLINE const Position3D& basePos();
+
+	/**
+	基础朝向， 如果有坐骑基础朝向可能是坐骑等
+	*/
+	INLINE const Direction3D& baseDir();
 
 	bool update();
 	
@@ -157,7 +161,7 @@ public:
 	/**
 		添加基础位置到更新包
 	*/
-	void addBasePosToStream(Network::Bundle* pSendBundle);
+	void addBaseDataToStream(Network::Bundle* pSendBundle);
 
 	/**
 		向witness客户端推送一条消息
@@ -210,7 +214,8 @@ private:
 	AOI_ENTITIES							aoiEntities_;
 	AOI_ENTITIES_MAP						aoiEntities_map_;
 
-	Position3D								lastBasePos;
+	Position3D								lastBasePos_;
+	Direction3D								lastBaseDir_;
 
 	uint16									clientAOISize_;
 };

@@ -251,6 +251,16 @@ PyObject* Proxy::pyGiveClientTo(PyObject* pyOterProxy)
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",
 			scriptName(), id());		
 		PyErr_PrintEx(0);
+
+		return 0;
+	}
+
+	if (pyOterProxy == NULL || !PyObject_TypeCheck(pyOterProxy, Proxy::getScriptType()))
+	{
+		PyErr_Format(PyExc_AssertionError, "%s[%d]::giveClientTo: arg1 not is Proxy!\n",
+			scriptName(), id());
+		PyErr_PrintEx(0);
+
 		return 0;
 	}
 
@@ -409,7 +419,7 @@ double Proxy::getRoundTripTime() const
 //-------------------------------------------------------------------------------------
 PyObject* Proxy::pyGetRoundTripTime()
 { 
-	if(isDestroyed())	
+	if (!hasFlags(ENTITY_FLAGS_DESTROYING) && isDestroyed())
 	{
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",		
 			scriptName(), id());		
@@ -433,7 +443,7 @@ double Proxy::getTimeSinceHeardFromClient() const
 //-------------------------------------------------------------------------------------
 PyObject* Proxy::pyGetTimeSinceHeardFromClient()
 { 
-	if(isDestroyed())	
+	if (!hasFlags(ENTITY_FLAGS_DESTROYING) && isDestroyed())
 	{
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",		
 			scriptName(), id());		
@@ -457,7 +467,7 @@ bool Proxy::hasClient() const
 //-------------------------------------------------------------------------------------
 PyObject* Proxy::pyHasClient()
 { 
-	if(isDestroyed())	
+	if (!hasFlags(ENTITY_FLAGS_DESTROYING) && isDestroyed())
 	{
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",		
 			scriptName(), id());		
@@ -476,7 +486,7 @@ PyObject* Proxy::pyHasClient()
 //-------------------------------------------------------------------------------------
 PyObject* Proxy::pyClientAddr()
 { 
-	if(isDestroyed())	
+	if (!hasFlags(ENTITY_FLAGS_DESTROYING) && isDestroyed())
 	{
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",		
 			scriptName(), id());		
@@ -505,7 +515,7 @@ PyObject* Proxy::pyClientAddr()
 //-------------------------------------------------------------------------------------
 PyObject* Proxy::pyGetEntitiesEnabled()
 { 
-	if(isDestroyed())	
+	if (!hasFlags(ENTITY_FLAGS_DESTROYING) && isDestroyed())
 	{
 		PyErr_Format(PyExc_AssertionError, "%s: %d is destroyed!\n",		
 			scriptName(), id());		
@@ -734,7 +744,16 @@ bool Proxy::pushBundle(Network::Bundle* pBundle)
 	if(!pChannel)
 		return false;
 
-	pChannel->send(pBundle);
+	pBundle->pChannel(pChannel);
+	pBundle->finiMessage(true);
+	pChannel->pushBundle(pBundle);
+
+	{
+		// 如果数据大量阻塞发不出去将会报警
+		//AUTO_SCOPED_PROFILE("pushBundleAndSendToClient");
+		//pChannel->send(pBundle);
+	}
+
 	return true;
 }
 

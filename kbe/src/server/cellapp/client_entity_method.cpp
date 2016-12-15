@@ -24,6 +24,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "client_entity_method.h"
 #include "network/bundle.h"
 #include "helper/eventhistory_stats.h"
+#include "network/network_stats.h"
 
 #include "client_lib/client_interface.h"
 #include "../../server/baseapp/baseapp_interface.h"
@@ -84,6 +85,14 @@ PyObject* ClientEntityMethod::callmethod(PyObject* args, PyObject* kwds)
 		return 0;
 	}
 
+	if(!srcEntity->isReal())
+	{
+		PyErr_Format(PyExc_AssertionError, "%s::clientEntity(%s): not is real entity, srcEntityID(%d).\n",
+			srcEntity->scriptName(), methodDescription_->getName(), srcEntity->id());		
+		PyErr_PrintEx(0);
+		return 0;
+	}
+	
 	if(srcEntity->pWitness() == NULL)
 	{
 		PyErr_Format(PyExc_AssertionError, "%s::clientEntity(%s): no client, srcEntityID(%d).\n",

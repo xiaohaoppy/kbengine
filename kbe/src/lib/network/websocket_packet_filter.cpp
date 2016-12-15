@@ -80,24 +80,29 @@ Reason WebSocketPacketFilter::send(Channel * pChannel, PacketSender& sender, Pac
 	TCPPacket* pRetTCPPacket = TCPPacket::createPoolObject();
 	websocket::WebSocketProtocol::FrameType frameType = websocket::WebSocketProtocol::BINARY_FRAME;
 
-	if(pBundle && pBundle->packets().size() > 1)
+	if (pBundle)
 	{
-		bool isEnd = pBundle->packets().back() == pPacket;
-		bool isBegin = pBundle->packets().front() == pPacket;
+		Bundle::Packets& packs = pBundle->packets();
 
-		if(!isEnd && !isBegin)
+		if (packs.size() > 1)
 		{
-			frameType = websocket::WebSocketProtocol::NEXT_FRAME;
-		}
-		else
-		{
-			if(!isEnd)
+			bool isEnd = packs.back() == pPacket;
+			bool isBegin = packs.front() == pPacket;
+
+			if (!isEnd && !isBegin)
 			{
-				frameType = websocket::WebSocketProtocol::INCOMPLETE_BINARY_FRAME;
+				frameType = websocket::WebSocketProtocol::NEXT_FRAME;
 			}
 			else
 			{
-				frameType = websocket::WebSocketProtocol::END_FRAME;
+				if (!isEnd)
+				{
+					frameType = websocket::WebSocketProtocol::INCOMPLETE_BINARY_FRAME;
+				}
+				else
+				{
+					frameType = websocket::WebSocketProtocol::END_FRAME;
+				}
 			}
 		}
 	}
@@ -226,7 +231,17 @@ Reason WebSocketPacketFilter::recv(Channel * pChannel, PacketReceiver & receiver
 		}
 		else
 		{
-			KBE_ASSERT(pFragmentDatasRemain_ > 0);
+			if (pFragmentDatasRemain_ <= 0)
+			{
+				ERROR_MSG(fmt::format("WebSocketPacketReader::recv: pFragmentDatasRemain_ <= 0! addr={}!\n",
+					pChannel_->c_str()));
+
+				this->pChannel_->condemn();
+				reset();
+
+				TCPPacket::reclaimPoolObject(static_cast<TCPPacket*>(pPacket));
+				return REASON_WEBSOCKET_ERROR;
+			}
 
 			if(pTCPPacket_ == NULL)
 				pTCPPacket_ = TCPPacket::createPoolObject();

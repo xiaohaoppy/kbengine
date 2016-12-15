@@ -49,6 +49,7 @@ public:
 	static ObjectPool<EntityRef>& ObjPool();
 	static EntityRef* createPoolObject();
 	static void reclaimPoolObject(EntityRef* obj);
+	static void destroyObjPool();
 	void onReclaimObject();
 
 	virtual size_t getPoolObjectBytes()
@@ -60,24 +61,24 @@ public:
 		return bytes;
 	}
 
-	void flags(uint32 v){ flags_ = v; }
-	void removeflags(uint32 v){ flags_ &= ~v; }
-	uint32 flags(){ return flags_; }
+	void flags(uint32 v) { flags_ = v; }
+	void removeflags(uint32 v) { flags_ &= ~v; }
+	uint32 flags() { return flags_; }
 	
 	Entity* pEntity() const { return pEntity_; }
 	void pEntity(Entity* e);
 
-	ENTITY_ID id() const{ return id_; }
+	ENTITY_ID id() const { return id_; }
 
-	uint8 aliasID() const{ return aliasID_; }
-	void aliasID(uint8 id) { aliasID_ = id; }
+	int aliasID() const { return aliasID_; }
+	void aliasID(int id) { aliasID_ = id; }
 
 	void addToStream(KBEngine::MemoryStream& s);
 	void createFromStream(KBEngine::MemoryStream& s);
 
 private:
 	ENTITY_ID id_;
-	uint8 aliasID_;
+	int aliasID_;
 	Entity* pEntity_;
 	uint32 flags_;
 };

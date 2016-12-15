@@ -328,8 +328,7 @@ const char * reasonToString(Reason reason)
 		if(pCurrMsgHandler && readPacketHead)																\
 		{																									\
 			headsize = NETWORK_MESSAGE_ID_SIZE;																\
-			if (pCurrMsgHandler->msgLen == NETWORK_VARIABLE_MESSAGE || 										\
-				g_packetAlwaysContainLength)																\
+			if (pCurrMsgHandler->msgLen == NETWORK_VARIABLE_MESSAGE)										\
 			{																								\
 				headsize += NETWORK_MESSAGE_LENGTH_SIZE;													\
 				if (length >= NETWORK_MESSAGE_MAX_SIZE)														\
@@ -407,6 +406,8 @@ extern uint32						g_intSendWindowMessagesOverflow;
 extern uint32						g_extSendWindowMessagesOverflow;
 extern uint32						g_intSendWindowBytesOverflow;
 extern uint32						g_extSendWindowBytesOverflow;
+extern uint32						g_intSentWindowBytesOverflow;
+extern uint32						g_extSentWindowBytesOverflow;
 
 bool initializeWatcher();
 void finalise(void);

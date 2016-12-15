@@ -32,6 +32,7 @@ along with KBEngine.  If not, see <http://www.gnu.org/licenses/>.
 #include "forward_message_over_handler.h"
 #include "network/tcp_packet.h"
 #include "network/udp_packet.h"
+#include "network/network_stats.h"
 #include "server/components.h"
 #include "server/telnet_server.h"
 #include "dbmgr/dbmgr_interface.h"
@@ -64,7 +65,8 @@ Cellapp::Cellapp(Network::EventDispatcher& dispatcher,
 	pTelnetServer_(NULL),
 	pWitnessedTimeoutHandler_(NULL),
 	pGhostManager_(NULL),
-	flags_(APP_FLAGS_NONE)
+	flags_(APP_FLAGS_NONE),
+	spaceViewers_()
 {
 	KBEngine::Network::MessageHandlers::pMainMessageHandlers = &CellappInterface::messageHandlers;
 
@@ -293,6 +295,8 @@ bool Cellapp::initializeEnd()
 //-------------------------------------------------------------------------------------
 void Cellapp::finalise()
 {
+	spaceViewers_.finalise();
+
 	SAFE_RELEASE(pGhostManager_);
 	SAFE_RELEASE(pWitnessedTimeoutHandler_);
 
@@ -305,8 +309,17 @@ void Cellapp::finalise()
 	Spaces::finalise();
 	Navigation::getSingleton().finalise();
 	forward_messagebuffer_.clear();
+	updatables_.clear();
 
+	destroyObjPool();
 	EntityApp<Entity>::finalise();
+}
+
+//-------------------------------------------------------------------------------------
+void Cellapp::destroyObjPool()
+{
+	EntityRef::destroyObjPool();
+	Witness::destroyObjPool();
 }
 
 //-------------------------------------------------------------------------------------
@@ -463,12 +476,12 @@ PyObject* Cellapp::__py_createEntity(PyObject* self, PyObject* args)
 		space->addEntityAndEnterWorld(pEntity);
 
 		// 有可能在addEntityAndEnterWorld中被销毁了
-		// 是否能在创建过程中被销毁还需要考虑
-		if(pEntity->isDestroyed())
-		{
-			Py_DECREF(pEntity);
-			return NULL;
-		}
+		// 这里需要让实体返回给脚本，只不过实体为isDestroyed = true状态
+		//if(pEntity->isDestroyed())
+		//{
+		//	Py_DECREF(pEntity);
+		//	return NULL;
+		//}
 	}
 
 	//Py_XDECREF(params);
@@ -733,6 +746,10 @@ void Cellapp::onDbmgrInitCompleted(Network::Channel* pChannel,
 {
 	EntityApp<Entity>::onDbmgrInitCompleted(pChannel, gametime, startID, endID, startGlobalOrder, startGroupOrder, digest);
 	
+	// 这里需要更新一下python的环境变量
+	this->getScript().setenv("KBE_BOOTIDX_GLOBAL", getenv("KBE_BOOTIDX_GLOBAL"));
+	this->getScript().setenv("KBE_BOOTIDX_GROUP", getenv("KBE_BOOTIDX_GROUP"));
+
 	SCOPED_PROFILE(SCRIPTCALL_PROFILE);
 
 	// 所有脚本都加载完毕
@@ -826,7 +843,7 @@ void Cellapp::onCreateInNewSpaceFromBaseapp(Network::Channel* pChannel, KBEngine
 	// DEBUG_MSG("Cellapp::onCreateInNewSpaceFromBaseapp: spaceID=%u, entityType=%s, entityID=%d, componentID=%"PRAppID".\n", 
 	//	spaceID, entityType.c_str(), mailboxEntityID, componentID);
 
-	Space* space = Spaces::createNewSpace(spaceID);
+	Space* space = Spaces::createNewSpace(spaceID, entityType);
 	if(space != NULL)
 	{
 		// 创建entity
@@ -933,7 +950,7 @@ void Cellapp::onRestoreSpaceInCellFromBaseapp(Network::Channel* pChannel, KBEngi
 	// DEBUG_MSG("Cellapp::onRestoreSpaceInCellFromBaseapp: spaceID=%u, entityType=%s, entityID=%d, componentID=%"PRAppID".\n", 
 	//	spaceID, entityType.c_str(), mailboxEntityID, componentID);
 
-	Space* space = Spaces::createNewSpace(spaceID);
+	Space* space = Spaces::createNewSpace(spaceID, entityType);
 	if(space != NULL)
 	{
 		// 创建entity
@@ -1209,7 +1226,7 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 			COMPONENT_ID cellID = gm->getRoute(eid);
 			if(gm && cellID > 0)
 			{
-				Network::Bundle* pBundle = Network::Bundle::createPoolObject();
+				Network::Bundle* pBundle = gm->createSendBundle(cellID);
 				(*pBundle).newMessage(CellappInterface::onEntityMail);
 				(*pBundle) << eid << mailtype;
 				(*pBundle).append(s);
@@ -1223,10 +1240,6 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 		s.done();
 		return;
 	}
-	
-	Network::Bundle* pBundle = Network::Bundle::createPoolObject();
-	Network::Bundle& bundle = *pBundle;
-	bool reclaim = true;
 
 	switch(mailtype)
 	{
@@ -1238,11 +1251,11 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 					GhostManager* gm = Cellapp::getSingleton().pGhostManager();
 					if(gm)
 					{
-						bundle.newMessage(CellappInterface::onEntityMail);
-						bundle << eid << mailtype;
-						bundle.append(s);
+						Network::Bundle* pBundle = gm->createSendBundle(entity->realCell());
+						pBundle->newMessage(CellappInterface::onEntityMail);
+						(*pBundle) << eid << mailtype;
+						pBundle->append(s);
 						gm->pushMessage(entity->realCell(), pBundle);
-						reclaim = false;
 					}
 				}
 				else
@@ -1265,10 +1278,14 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 					break;
 				}
 				
-				mailbox->newMail(bundle);
-				bundle.append(s);
-				mailbox->postMail(pBundle);
-				reclaim = false;
+				Network::Channel* pChannel = mailbox->getChannel();
+				if (pChannel)
+				{
+					Network::Bundle* pBundle = pChannel->createSendBundle();
+					mailbox->newMail(*pBundle);
+					pBundle->append(s);
+					pChannel->send(pBundle);
+				}
 			}
 			break;
 		
@@ -1284,11 +1301,14 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 					break;
 				}
 				
-				mailbox->newMail(bundle);
-				bundle.append(s);
-				s.done();
-				mailbox->postMail(pBundle);
-				reclaim = false;
+				Network::Channel* pChannel = mailbox->getChannel();
+				if (pChannel)
+				{
+					Network::Bundle* pBundle = pChannel->createSendBundle();
+					mailbox->newMail(*pBundle);
+					pBundle->append(s);
+					pChannel->send(pBundle);
+				}
 			}
 			break;
 		default:
@@ -1297,9 +1317,6 @@ void Cellapp::onEntityMail(Network::Channel* pChannel, KBEngine::MemoryStream& s
 					mailtype, eid));
 			}
 	};
-
-	if(reclaim)
-		Network::Bundle::reclaimPoolObject(pBundle);
 
 	s.done();
 }
@@ -1358,6 +1375,63 @@ void Cellapp::onUpdateDataFromClient(Network::Channel* pChannel, KBEngine::Memor
 		return;
 	}
 
+	// 如果是被系统控制了，又或被别人控制了，则忽略来自自己客户端的更新消息
+	if (e->controlledBy() == NULL || e->controlledBy()->id() != srcEntityID)
+	{
+		// phw: 经测试发现，由于controlledBy改变时通知客户端存在一定的时间差，
+		//      所以客户端收到消息前仍然发送位移消息，这使得下面的错误日志变得有点多，
+		//      因此注释掉这个日志，以减少不必要的日志输出。
+		//ERROR_MSG(fmt::format("Cellapp::onUpdateDataFromClientForControlledEntity: entity {} has no permission to control entity {}!\n", proxiesEntityID, srcEntityID));
+
+		s.done();
+		return;
+	}
+
+	e->onUpdateDataFromClient(s);
+	s.done();
+}
+
+//-------------------------------------------------------------------------------------
+void Cellapp::onUpdateDataFromClientForControlledEntity(Network::Channel* pChannel, KBEngine::MemoryStream& s)
+{
+	ENTITY_ID proxiesEntityID = 0;
+	s >> proxiesEntityID;
+	if(proxiesEntityID <= 0)
+		return;
+
+	if(s.length() <= 0)
+		return;
+
+	ENTITY_ID srcEntityID = 0;
+
+	s >> srcEntityID;
+	if(srcEntityID <= 0)
+		return;
+	
+	if(s.length() <= 0)
+		return;
+
+	KBEngine::Entity* e = findEntity(srcEntityID);	
+
+	if(e == NULL)
+	{
+		ERROR_MSG(fmt::format("Cellapp::onUpdateDataFromClientForControlledEntity: not found entity {}!\n", srcEntityID));
+		
+		s.done();
+		return;
+	}
+
+	if (e->controlledBy() == NULL || e->controlledBy()->id() != proxiesEntityID)
+	{
+		// phw: 经测试发现，由于controlledBy改变时通知客户端存在一定的时间差，
+		//      所以客户端收到消息前仍然发送位移消息，这使得下面的错误日志变得有点多，
+		//      因此注释掉这个日志，以减少不必要的日志输出。
+		//ERROR_MSG(fmt::format("Cellapp::onUpdateDataFromClientForControlledEntity: entity {} has no permission to control entity {}!\n", proxiesEntityID, srcEntityID));
+		
+		s.done();
+		return;
+	}
+
 	e->onUpdateDataFromClient(s);
 	s.done();
 }
@@ -1378,7 +1452,7 @@ void Cellapp::onUpdateGhostPropertys(Network::Channel* pChannel, KBEngine::Memor
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
+				Network::Bundle* pForwardBundle = gm->createSendBundle(targetCell);
 				(*pForwardBundle).newMessage(CellappInterface::onUpdateGhostPropertys);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1415,7 +1489,7 @@ void Cellapp::onRemoteRealMethodCall(Network::Channel* pChannel, KBEngine::Memor
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
+				Network::Bundle* pForwardBundle = gm->createSendBundle(targetCell);
 				(*pForwardBundle).newMessage(CellappInterface::onRemoteRealMethodCall);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1452,7 +1526,7 @@ void Cellapp::onUpdateGhostVolatileData(Network::Channel* pChannel, KBEngine::Me
 			COMPONENT_ID targetCell = gm->getRoute(entityID);
 			if(targetCell > 0)
 			{
-				Network::Bundle* pForwardBundle = Network::Bundle::createPoolObject();
+				Network::Bundle* pForwardBundle = gm->createSendBundle(targetCell);
 				(*pForwardBundle).newMessage(CellappInterface::onUpdateGhostVolatileData);
 				(*pForwardBundle) << entityID;
 				pForwardBundle->append(s);
@@ -1491,13 +1565,13 @@ void Cellapp::forwardEntityMessageToCellappFromClient(Network::Channel* pChannel
 		return;
 	}
 
-	if(e->isDestroyed())																				
-	{																										
-		ERROR_MSG(fmt::format("{}::forwardEntityMessageToCellappFromClient: {} is destroyed!\n",										
+	if(e->isDestroyed())
+	{
+		ERROR_MSG(fmt::format("{}::forwardEntityMessageToCellappFromClient: {} is destroyed!\n",	
 			e->scriptName(), e->id()));
 
 		s.done();
-		return;																							
+		return;
 	}
 
 	// 检查是否是entity消息， 否则不合法.
@@ -1528,7 +1602,7 @@ void Cellapp::forwardEntityMessageToCellappFromClient(Network::Channel* pChannel
 			return;
 		}
 
-		if((pMsgHandler->msgLen == NETWORK_VARIABLE_MESSAGE) || Network::g_packetAlwaysContainLength)
+		if(pMsgHandler->msgLen == NETWORK_VARIABLE_MESSAGE)
 			s >> currMsgLen;
 		else
 			currMsgLen = pMsgHandler->msgLen;
@@ -1686,11 +1760,11 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	s >> entityType;
 	s >> pos.x >> pos.y >> pos.z;
 	s >> dir.dir.x >> dir.dir.y >> dir.dir.z;
-	
+
 	bool success = false;
 
 	Entity* refEntity = Cellapp::getSingleton().findEntity(nearbyMBRefID);
-	if(refEntity == NULL || refEntity->isDestroyed())
+	if (refEntity == NULL || refEntity->isDestroyed())
 	{
 		s.rpos((int)rpos);
 
@@ -1702,7 +1776,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 		(*pBundle).append(&s);
 		pChannel->send(pBundle);
 
-		ERROR_MSG(fmt::format("Cellapp::reqTeleportToCellApp: not found refEntity({}), spaceID({}), reqTeleportEntity({})!\n", 
+		ERROR_MSG(fmt::format("Cellapp::reqTeleportToCellApp: not found refEntity({}), spaceID({}), reqTeleportEntity({})!\n",
 			nearbyMBRefID, spaceID, teleportEntityID));
 
 		s.done();
@@ -1710,7 +1784,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	}
 
 	Space* space = Spaces::findSpace(refEntity->spaceID());
-	if(space == NULL || !space->isGood())
+	if (space == NULL || !space->isGood())
 	{
 		s.rpos((int)rpos);
 
@@ -1729,7 +1803,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 
 	// 创建entity
 	Entity* e = createEntity(EntityDef::findScriptModule(entityType)->getName(), NULL, false, teleportEntityID, false);
-	if(e == NULL)
+	if (e == NULL)
 	{
 		s.rpos((int)rpos);
 
@@ -1745,7 +1819,7 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 		s.done();
 		return;
 	}
-	
+
 	e->createFromStream(s);
 
 	// 有可能序列化过来的ghost内容包含移动控制器，之所以序列化过来是为了
@@ -1762,9 +1836,22 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 	e->ghostCell(ghostCell);
 	e->spaceID(space->id());
 	e->setPositionAndDirection(pos, dir);
-	
+
+	if (e->baseMailbox())
+	{
+		// 如果是有base的实体，需要将baseappID填入，以便在reqTeleportToCellAppCB中回调给baseapp传输结束状态
+		entityBaseappID = e->baseMailbox()->componentID();
+
+		// 向baseapp发送传送到达通知
+		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
+		(*pBundle).newMessage(BaseappInterface::onMigrationCellappArrived);
+		(*pBundle) << e->id();
+		(*pBundle) << g_componentID;
+		e->baseMailbox()->postMail(pBundle);
+	}
+
 	// 进入新space之前必须通知客户端leaveSpace
-	if(e->clientMailbox())
+	if (e->clientMailbox())
 	{
 		Network::Bundle* pSendBundle = Network::Bundle::createPoolObject();
 		NETWORK_ENTITY_MESSAGE_FORWARD_CLIENT_START(e->id(), (*pSendBundle));
@@ -1779,12 +1866,8 @@ void Cellapp::reqTeleportToCellApp(Network::Channel* pChannel, MemoryStream& s)
 
 	Entity* nearbyMBRef = Cellapp::getSingleton().findEntity(nearbyMBRefID);
 	e->onTeleportSuccess(nearbyMBRef, space->id());
-	
-	success = true;
 
-	// 如果是有base的实体，需要将baseappID填入，以便在reqTeleportToCellAppCB中回调给baseapp传输结束状态
-	if(e->baseMailbox())
-		entityBaseappID = e->baseMailbox()->componentID();
+	success = true;
 
 	{
 		Network::Bundle* pBundle = Network::Bundle::createPoolObject();
@@ -1858,6 +1941,7 @@ void Cellapp::reqTeleportToCellAppCB(Network::Channel* pChannel, MemoryStream& s
 	s >> pos.x >> pos.y >> pos.z;
 	s >> dir.dir.x >> dir.dir.y >> dir.dir.z;
 
+	entity->removeFlags(ENTITY_FLAGS_TELEPORT_START);
 	entity->changeToReal(0, s);
 	entity->onTeleportFailure();
 
@@ -2005,6 +2089,22 @@ PyObject* Cellapp::__py_setFlags(PyObject* self, PyObject* args)
 
 	Cellapp::getSingleton().flags(flags);
 	S_Return;
+}
+
+//-------------------------------------------------------------------------------------
+void Cellapp::setSpaceViewer(Network::Channel* pChannel, MemoryStream& s)
+{
+	bool del = false;
+	s >> del;
+
+	SPACE_ID spaceID;
+	s >> spaceID;
+
+	// 如果为0，则查看所有cell
+	CELL_ID cellID;
+	s >> cellID;
+
+	spaceViewers_.updateSpaceViewer(pChannel->addr(), spaceID, cellID, del);
 }
 
 //-------------------------------------------------------------------------------------

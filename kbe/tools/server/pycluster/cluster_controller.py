@@ -122,13 +122,16 @@ class ClusterQueryHandler(ClusterControllerHandler):
 			(len(self.interfaces_groups), numComponent, numBases, numProxices, numClients, numEntities, numCells))
 		
 class ClusterStartHandler(ClusterControllerHandler):
-	def __init__(self, uid, startTemplate, machineIP, cid, gus):
+	def __init__(self, uid, startTemplate, machineIP, cid, gus, kbe_root, kbe_res_path, kbe_bin_path):
 		ClusterControllerHandler.__init__(self, uid)
 		
 		self.startTemplate = startTemplate.split("|")
 		self.machineIP = machineIP
 		self.cid = cid
 		self.gus = gus
+		self.kbe_root = kbe_root
+		self.kbe_res_path = kbe_res_path
+		self.kbe_bin_path = kbe_bin_path
 		
 	def do(self):
 		self.queryAllInterfaces()
@@ -154,7 +157,7 @@ class ClusterStartHandler(ClusterControllerHandler):
 				print("not found %s, start failed!" % ctype)
 				continue
 				
-			self.startServer( COMPONENT_NAME2TYPE[ctype], self.cid, self.gus, self.machineIP )
+			self.startServer( COMPONENT_NAME2TYPE[ctype], self.cid, self.gus, self.machineIP, self.kbe_root, self.kbe_res_path, self.kbe_bin_path )
 		
 		
 		qcount = 1
@@ -234,7 +237,8 @@ class ClusterStopHandler(ClusterControllerHandler):
 				if showDebug:
 					print("\t\t%s : %i\t%s" % (ctype, len(clist), clist))
 			
-			self.stopServer( COMPONENT_NAME2TYPE[ctype] )
+			# 最好是尽量多的尝试次数，否则可能包未及时恢复造成后续查询错乱
+			self.stopServer( COMPONENT_NAME2TYPE[ctype], 0, "<broadcast>", 3 )
 			
 			#print ("ClusterStopHandler::do: stop uid=%s, type=%s, send=%s" % (self.uid, ctype, \
 			#	len(self.recvDatas) > 0 and self.recvDatas[0] == b'\x01'))
@@ -404,7 +408,7 @@ class ClusterSaveProcessHandler(ClusterControllerHandler):
 					continue
 					
 				t2c[info.componentType] += 1
-				v = vt % (info.intaddr, info.componentID, 0)
+				v = vt % (info.intaddr, info.componentID, info.genuuid_sections)
 				cper.set(COMPONENT_NAME[info.componentType], "item_%s" % t2c[info.componentType], v)
 		
 		if self.filename:
@@ -464,7 +468,7 @@ class ClusterLoadProcessHandler(ClusterControllerHandler):
 					gus = self.makeGUS(ct)
 
 				print( "run '%s' in '%s', uid = %s, cid = %s, gus = %s" % (secName, targetIP, self.uid, cid, gus) )
-				self.startServer( ct, cid, gus, targetIP )
+				self.startServer( ct, cid, gus, targetIP,"","","" )
 
 		MUTIL_CT = [
 				LOGINAPP_TYPE,
@@ -486,7 +490,7 @@ class ClusterLoadProcessHandler(ClusterControllerHandler):
 						gus = self.makeGUS(ct)
 
 					print( "run '%s' in '%s', uid = %s, cid = %s, gus = %s" % (secName, targetIP, self.uid, cid, gus) )
-					self.startServer( ct, cid, gus, targetIP )
+					self.startServer( ct, cid, gus, targetIP,"","","" )
 				else:
 					break
 		
@@ -544,7 +548,7 @@ class ClusterStartServerHandler(ClusterControllerHandler):
 			cid = self.makeCID( ct )
 			gus = self.makeGUS( ct )
 			print( "run '%s' in '%s', uid = %s, cid = %s, gus = %s" % (secName, self.machineIP, self.uid, cid, gus) )
-			self.startServer( ct, cid, gus, self.machineIP )
+			self.startServer( ct, cid, gus, self.machineIP,"","","" )
 
 		queryCount = 0
 		expectCount = [0] * COMPONENT_END_TYPE
@@ -629,7 +633,7 @@ if __name__ == "__main__":
 			cid = int(cid)
 			gus = int(gus)
 			
-			clusterHandler = ClusterStartHandler(uid, componentName, machineip, cid, gus)
+			clusterHandler = ClusterStartHandler(uid, componentName, machineip, cid, gus, "","","")
 
 		elif cmdType == "stop":
 			templatestr = ""

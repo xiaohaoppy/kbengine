@@ -784,7 +784,7 @@ void ClientObjectBase::onCreatedProxies(Network::Channel * pChannel, uint64 rndU
 			Config::getSingleton().isOnInitCallPropertysSetMethods();
 	
 		if (isOnInitCallPropertysSetMethods)
-			entity->callPropertysSetMethods();
+			pEntity->callPropertysSetMethods();
 	}
 }
 
@@ -1207,6 +1207,19 @@ void ClientObjectBase::onUpdateBasePosXZ(Network::Channel* pChannel, float x, fl
 	if(pEntity)
 	{
 		pEntity->serverPosition(Position3D(x, pEntity->serverPosition().y, z));
+	}
+}
+
+//-------------------------------------------------------------------------------------
+void ClientObjectBase::onUpdateBaseDir(Network::Channel* pChannel, MemoryStream& s)
+{
+	float yaw, pitch, roll;
+	s >> yaw >> pitch >> roll;
+
+	client::Entity* pEntity = pPlayer();
+	if (pEntity)
+	{
+		// @TODO(phw)：这里将来需要与controlledBy机制一起实现
 	}
 }
 
@@ -1772,6 +1785,11 @@ void ClientObjectBase::onStreamDataCompleted(Network::Channel* pChannel, int16 i
 }
 
 //-------------------------------------------------------------------------------------
+void ClientObjectBase::onControlEntity(Network::Channel* pChannel, int32 entityID, int8 isControlled)
+{
+}
+
+//-------------------------------------------------------------------------------------
 void ClientObjectBase::addSpaceGeometryMapping(SPACE_ID spaceID, const std::string& respath)
 {
 	INFO_MSG(fmt::format("ClientObjectBase::addSpaceGeometryMapping: spaceID={}, respath={}!\n",
@@ -2169,6 +2187,12 @@ PyObject* ClientObjectBase::__py_disconnect(PyObject* self, PyObject* args)
 	}
 
 	S_Return;
+}
+
+//-------------------------------------------------------------------------------------
+void ClientObjectBase::onAppActiveTickCB(Network::Channel* pChannel)
+{
+	pChannel->updateLastReceivedTime();
 }
 
 //-------------------------------------------------------------------------------------		
